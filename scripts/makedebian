@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+set -e || exit 1
+set -o nounset
+set -o pipefail
+
+usage () { echo "usage: `basename $0` image keyring giggage moddir tarball" ; }
+usageerr () { usage >&2 ; return 1 ; }
+
+which realpath > /dev/null
+which debootstrap > /dev/null
+
+[ $# -eq 5 ] || usageerr
+[ $3 -ge 2 ] || { echo "Too few gigs: $3" >&2 ; usageerr ; }
+[ -d "$4" ] || { echo "Not a directory: $4" >&2 ; usageerr ; }
+
+TARBALL="`realpath $5`"
+[ -r "$TARBALL" ] || { echo "Not a readable file: $TARBALL" >&2 ; usageerr ; }
+
+dd if=/dev/zero of="$1" bs=512 count=$(($3 * 2 * 1024 * 1024))
+
+unmount_ext3 () {
+	[ -z "$MOUNTPNT" ] || { sudo umount "$MOUNTPNT" ; rmdir "$MOUNTPNT" ; }
+}
+
+DIST=lenny
+DEBURI=http://ftp.us.debian.org/debian/
+DEBINC=openssh-server,postfix,sudo,procmail,iproute,locales,less
+DEBEX=ed,nano,tasksel,tasksel-data
+
+mkfs.ext3 -F "$1"
+MOUNTPNT=`mktemp -d -t \`basename $0\`.XXXXXX`
+
+trap unmount_ext3 EXIT HUP QUIT TERM
+
+sudo mount -t ext3 -o loop "$1" "$MOUNTPNT"
+sudo debootstrap --include=$DEBINC --exclude=$DEBEX --keyring=$2 --unpack-tarball "$TARBALL" --arch i386 $DIST "$MOUNTPNT" $DEBURI
+pushd "$4" > /dev/null
+# FIXME cpio doesn't seem to have the earth's most reliable exit value on
+# various errors; we might want to run a diff or something....
+find . ! -path \*/.svn\* -print0 | sudo cpio -0 --no-preserve-owner -d -p -u --sparse -v "$MOUNTPNT"
+sudo chmod 0440 "$MOUNTPNT/etc/sudoers"
+popd
+
+# things are cleaned up by the exit handler...

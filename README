@@ -1,0 +1,1601 @@
+Requirements|
+============'
+
+This project has only been tested on a Debian GNU/Linux "Unstable" machine,
+running 2.6.2x kernels. It should run on any sufficient Linux system; the
+following will be required:
+
+	- The Qemu PC System Emulator and the appropriate kernel-tied wrapper:
+	  - kvm and the appropriate kernel module for your CPU loaded, OR
+	  - the kqemu binary and the closed-source kqemu kernel module loaded
+	- iptables, and the kernel NAT and MARK iptables extensions
+	- Policy-based routing enabled in the kernel
+	- netfilter mark (nfmark)-based routing selection enabled in the kernel
+	- MASQUERADE rules set up on interfaces corresponding to default routes
+	- The FUSE module loaded, and rights to mount FUSE devices
+	- The fuseiso and funion FUSE modules
+	- The vfat module loaded, and rights to mount vfat devices via loopback
+	- The tun module loaded, and rights to manipulate TUN/TAP devices
+	- The tunctl application (available from uml-utilities)
+	- The bridge module loaded, and rights to manipulate bridges
+	- Rights to manipulate the system addressing and routing tables
+	- The iproute2 ("ip"), brctl and tunctl utilities
+	- An ISO creation utility (genisoimage or mkisofs)
+	- A recent version of the Wine Windows emulator
+	- The dnsmasq DNS/DHCP server
+	- XMLStarlet, GNUmake, etc
+	- The qemu-make-debian-root program (this requires, in turn, at least
+		uudecode, debootstrap, sfdisk and ext2 filesystem support),
+		supplied by the qemu package. We may move to qemubuilder.
+	- net-snmp's snmpd version 5.3.1 or greater
+
+Virtualization is a heavy-duty task. At a bare minimum, you will want a CPU
+that supports virtualization (Intel Virtualization Technology or AMD
+Virtualization) and a gig of ram to run two active virtual machines. If you're
+using kqemu, you'll need a sizable shmfs available to your virtual machines.
+
+Todo|
+===='
+
+Make interface naming / addressing more flexible and robust. The best solution
+would involve generating interface names from a hash of the build directory.
+
+Come up with a solution to Qemu process control which doesn't rely on the
+-daemonize command line parameter; this has bugs when used in conjunction with
+either -pidfile or vdeq. 
+
+Virtualize: Trusted Source repper servers, SWPS, Sidewinder, IronMail
+
+Start using fusefat instead of sudo-based generic loopback mount for VFAT.
+
+Interactions with dnsmasq|
+========================='
+
+If you are already running dnsmasq, you can still run the internal dnsmasq
+without conflict. Your other dnsmasq process must use the bind-interfaces
+configuration option, and explicitly set their listening interfaces.
+Otherwise, you'll get an error when you attempt to bring up the internal
+dnsmasq. This is the same requirement as any multi-dnsmasq setup, so if you
+were already running multiple dnsmasq processes, you should be fine.
+
+Hard Restart of the VM|
+======================'
+
+Should you need do this, run "make killkvm" followed by "make runcheckpoint"
+
+Restarting the TUN/TAP|
+======================'
+
+Should you need do this, run "make killtap" followed by "make runcheckpoint".
+
+Virtualizing a VPN-1|
+===================='
+
+To construct a virtualized VPN-1 appliance, build the checkpoint target.
+This process is fully automatic, save the VPN-1 installation configuration,
+which you must perform. Be sure to provide Any or the suitable TUN/TAP device
+address (usually 172.17.42.1) when configuring GUI clients, or else you won't
+be able to connect with SmartPortal etc (this will manifest as a failure to
+connect whenever the firewall is up).
+
+Once that's done, run SmartPortal with the smartportal target.
+
+To access the backend, you are advised to open up the SSH service from your
+TUN/TAP interface via the FW-1 configuration applet in SmartPortal. You may
+also open a TCP connection to port 10023 on the TUN/TAP address to directly
+log in to the backend via the serial console. An example method would be:
+
+	socat - tcp:172.17.42.1:10023
+
+This networked serial port will not be available, of course, on real (ie non-
+virtualized) appliances.
+
+CheckPoint Installer|
+===================='
+
+See the next section, "Sample output", to confirm that the automatic setup of
+the underlying RedHat Linux Enterprise Server 3-i386 system is running as
+expected. After a pause, you will enter the CheckPoint UNIX installer, wherein
+your VPN-1 can be configured. The following answers are suggested:
+
+ N)ext
+ Y)es
+ N)ext (CheckPoint Power)
+ N)ext (New Installation)
+ 1236N)ext (VPN-1, UserAuthority, SmartCenter, SmartPortal, but no
+		 Eventia Suite or Integrity)
+ N)ext (Primary)
+ N)ext
+ N)ext will start the install, which looks like this:
+ ------------------------------------------------------------------------------
+                                                                         NGX R65
+                         Starting installation procedure
+
+
+
+Installing VPN-1 Power and Primary SmartCenter ...
+Installing UserAuthority Server ...
+Installing SmartPortal ...
+ ------------------------------------------------------------------------------
+ 
+ N)o, do not add licenses at this time
+ Y)es, add an administrator (pick a username + password)
+ Y)es, add a GUI Client
+ Any\n^D (The literal characters 'A', 'n', and 'y', Enter, Ctrl-D)
+ Y)es this is correct
+ Enter (super-user group)
+ Y)es this is ok
+ N)o, don't save it to a file
+ Y)es, reboot the machine
+
+Following, you should see output similar to that in "Sample post-install
+output" below.
+
+Connecting via SSH|
+=================='
+Always use scripts/sshimage to connect to the image. Its command line arguments
+are the same as ssh's, but it invokes a different config file than the default.
+
+Until you allow SSH to the backend, the presence of FW-1's default ruleset will
+filter incoming packets. You'll see this kind of error:
+
+[recombinator](0) $ scripts/sshimage 172.17.42.90
+debug1: Connecting to 172.17.42.90 [172.17.42.90] port 22.
+debug1: connect to address 172.17.42.90 port 22: Connection timed out
+ssh: connect to host 172.17.42.90 port 22: Connection timed out
+[recombinator](255) $
+
+Under "Running SmartPortal", you'll find instructions for opening up SSH
+access to the VPN-1. Once you've done this, you might want to check out the
+Trusted Source Module code; to do so, add a user to the VPN-1 with the adduser
+tool. Copy the .ssh directory from ~root to that user's home directory, and
+change the permissions via "chown -R". Log in as that user via
+"scripts/sshimage user@imageip". Ensure your SSH agent has been properly
+forwarded to the VPN-1 via "ssh-add -l", and check out the garuda repository
+via svn co svn+ssh://svn.research.sys/svn/garuda/. The development tools
+necessary to build TSM are preinstalled onto the VPN-1 by synaesthesia. It will
+be necessary to add the following packages and their dependencies to a real
+appliance via the RedHat package selection mechanism:
+
+	httpd (for libapr)
+	ctags
+	gcc-c++
+	openssl-devel
+	pam-devel
+	elfutils-devel
+	screen
+	vim-enhanced
+
+and also the neon-0.24.7-1.i386, xmlstarlet-1.0.1-1.i586 and
+subversion-1.4.3-1.i386 RPM's from
+http://knuth.research.sys/checkpoint/RHES-3-x86.
+
+Running SmartPortal|
+==================='
+
+Wine will throw an intense number of errors to the console. Also, sometimes the
+installation will fail. Run it again if you need to, selecting "Repair". This
+has always provided me with a working setup. If need be, try building the
+target a second time if it fails. This isn't the most rigorous process on
+earth, but then again, neither is Windows. Wine will want to install the Gecko
+rendering code; let it.
+
+Use the account you setup as an administrator in the CheckPoint Installer to
+connect to the IP of the VPN-1, usually 172.17.42.90 (ip n to check your ARP
+tables).
+
+The SmartDashboard is where most of your configuration goes on. Enter it via
+the "Window" menu, and let it build your SmartMap (this only happens the first
+time). Select the "Security" tab, and add a rule via the "Rules" menu. Modify
+the rule to allow SSH2 inbound to your VPN-1 (usually "rtl-vpn1"). Verify the
+ruleset via the "Policy" menu, and assuming it is verified, install it via the
+same "Policy" menu ("Verify" and "Install" items, respectively). In the
+installation widget, select your VPN-1 and install. Everything should go
+smoothly.
+
+At this point, you should be able to connect via SSH as explained above in
+"Connecting via SSH".
+
+Virtualizing an SMTP Server|
+==========================='
+
+To construct a virtualized SMTP server, build the smtpserver target. The
+creation process is fully automatic. The smtpserver target depends on the 
+checkpoint target, because the SMTP server routes through the VPN-1. The
+necessity of communicating with the SMTP server during its creation requires
+that a suitable policy be configured on the VPN-1 before creating the SMTP
+server; currently, this cannot be done automatically, so it is important that
+you have configured the VPN-1 before running "make smtpserver".
+
+Adding a Mail Server|
+===================='
+
+In SmartPortal, right click in the graphic panel, and select "New Network
+Object" from the menu. Add a new "Node"->"Host". Name it rtl-smtp, and resolve
+the address using the lookup capability.
+
+Sample output|
+============='
+
+[recombinator](0) $ make runcheckpoint
+sudo tunctl -t tap0 -u dank
+Set 'tap0' persistent and owned by uid 1000
+sudo ip l s dev tap0 up
+sudo ip a a 172.17.42.1/24 dev tap0
+sudo dnsmasq -C conf/dnsmasq.conf --pid-file=/home/dank/src/garuda/trunk/synaesthesia/.out/dhcp/dnsmasq.pid --dhcp-leasefile=.out/dhcp/dnsmasq.leases --bind-interfaces --dhcp-authoritative --user=dank --group=dank --dhcp-range=172.17.42.50,172.17.42.150 --domain=garudanet --listen-address=172.17.42.1 --dhcp-host=00:02:04:06:08:0a,172.17.42.90,rtl-vpn1,12h --dhcp-host=00:03:05:07:09:0b,172.17.42.91,ne2k-vpn1,12h
+`/home/dank/tmp/automate-rhel3-iso-fuse.S6207/images/bootdisk.img' -> `/home/dank/tmp/automate-rhel3-iso-fuse.a6246/images/bootdisk.img'
+`RedHat-mods/3-u9-i386-es/images/bootdisk.img/syslinux.cfg' -> `/home/dank/tmp/automate-rhel3-iso-fuse.O6260/syslinux.cfg'
+`RedHat-mods/3-u9-i386-es/ks.cfg' -> `/home/dank/tmp/automate-rhel3-iso-fuse.a6246/ks.cfg'
+`RedHat-mods/3-u9-i386-es/.discinfo' -> `/home/dank/tmp/automate-rhel3-iso-fuse.a6246/.discinfo'
+Using READM000.HTM;1 for  /README-en.html (README-es.html)
+Using READM001.HTM;1 for  /README-zh_CN.html (README-zh_TW.html)
+Using RELEA000.HTM;1 for  /RELEASE-NOTES-U1-de.html (RELEASE-NOTES-U1-en.html)
+Using RELEA001.HTM;1 for  /RELEASE-NOTES-U1-en.html (RELEASE-NOTES-U1-es.html)
+Using RELEA002.HTM;1 for  /RELEASE-NOTES-U1-es.html (RELEASE-NOTES-U1-fr.html)
+Using RELEA003.HTM;1 for  /RELEASE-NOTES-U1-fr.html (RELEASE-NOTES-U1-it.html)
+Using RELEA004.HTM;1 for  /RELEASE-NOTES-U1-it.html (RELEASE-NOTES-U1-ja.html)
+Using RELEA005.HTM;1 for  /RELEASE-NOTES-U1-ja.html (RELEASE-NOTES-U1-ko.html)
+Using RELEA006.HTM;1 for  /RELEASE-NOTES-U1-ko.html (RELEASE-NOTES-U1-pt_BR.html)
+Using RELEA007.HTM;1 for  /RELEASE-NOTES-U1-pt_BR.html (RELEASE-NOTES-U1-zh_CN.html)
+Using RELEA008.HTM;1 for  /RELEASE-NOTES-U1-zh_CN.html (RELEASE-NOTES-U1-zh_TW.html)
+Using RELEA009.HTM;1 for  /RELEASE-NOTES-U1-zh_TW.html (RELEASE-NOTES-U2-de.html)
+Using RELEA000.;1 for  /RELEASE-NOTES-U1-en (RELEASE-NOTES-U2-en)
+Using RELEA00A.HTM;1 for  /RELEASE-NOTES-U2-de.html (RELEASE-NOTES-U2-en.html)
+Using RELEA00B.HTM;1 for  /RELEASE-NOTES-U2-en.html (RELEASE-NOTES-U2-es.html)
+Using RELEA00C.HTM;1 for  /RELEASE-NOTES-U2-es.html (RELEASE-NOTES-U2-fr.html)
+Using RELEA00D.HTM;1 for  /RELEASE-NOTES-U2-fr.html (RELEASE-NOTES-U2-it.html)
+Using RELEA00E.HTM;1 for  /RELEASE-NOTES-U2-it.html (RELEASE-NOTES-U2-ja.html)
+Using RELEA00F.HTM;1 for  /RELEASE-NOTES-U2-ja.html (RELEASE-NOTES-U2-ko.html)
+Using RELEA00G.HTM;1 for  /RELEASE-NOTES-U2-ko.html (RELEASE-NOTES-U2-pt_BR.html)
+Using RELEA00H.HTM;1 for  /RELEASE-NOTES-U2-pt_BR.html (RELEASE-NOTES-U2-zh_CN.html)
+Using RELEA00I.HTM;1 for  /RELEASE-NOTES-U2-zh_CN.html (RELEASE-NOTES-U2-zh_TW.html)
+Using RELEA00J.HTM;1 for  /RELEASE-NOTES-U2-zh_TW.html (RELEASE-NOTES-U3-de.html)
+Using RELEA001.;1 for  /RELEASE-NOTES-U2-en (RELEASE-NOTES-U3-en)
+Using RELEA00K.HTM;1 for  /RELEASE-NOTES-U3-de.html (RELEASE-NOTES-U3-en.html)
+Using RELEA00L.HTM;1 for  /RELEASE-NOTES-U3-en.html (RELEASE-NOTES-U3-es.html)
+Using RELEA00M.HTM;1 for  /RELEASE-NOTES-U3-es.html (RELEASE-NOTES-U3-fr.html)
+Using RELEA00N.HTM;1 for  /RELEASE-NOTES-U3-fr.html (RELEASE-NOTES-U3-it.html)
+Using RELEA00O.HTM;1 for  /RELEASE-NOTES-U3-it.html (RELEASE-NOTES-U3-ja.html)
+Using RELEA00P.HTM;1 for  /RELEASE-NOTES-U3-ja.html (RELEASE-NOTES-U3-ko.html)
+Using RELEA00Q.HTM;1 for  /RELEASE-NOTES-U3-ko.html (RELEASE-NOTES-U3-pt_BR.html)
+Using RELEA00R.HTM;1 for  /RELEASE-NOTES-U3-pt_BR.html (RELEASE-NOTES-U3-zh_CN.html)
+Using RELEA00S.HTM;1 for  /RELEASE-NOTES-U3-zh_CN.html (RELEASE-NOTES-U3-zh_TW.html)
+Using RELEA00T.HTM;1 for  /RELEASE-NOTES-U3-zh_TW.html (RELEASE-NOTES-U4-de.html)
+Using RELEA002.;1 for  /RELEASE-NOTES-U3-en (RELEASE-NOTES-U4-en)
+Using RELEA00U.HTM;1 for  /RELEASE-NOTES-U4-de.html (RELEASE-NOTES-U4-en.html)
+Using RELEA00V.HTM;1 for  /RELEASE-NOTES-U4-en.html (RELEASE-NOTES-U4-es.html)
+Using RELEA00W.HTM;1 for  /RELEASE-NOTES-U4-es.html (RELEASE-NOTES-U4-fr.html)
+Using RELEA00X.HTM;1 for  /RELEASE-NOTES-U4-fr.html (RELEASE-NOTES-U4-it.html)
+Using RELEA00Y.HTM;1 for  /RELEASE-NOTES-U4-it.html (RELEASE-NOTES-U4-ja.html)
+Using RELEA00Z.HTM;1 for  /RELEASE-NOTES-U4-ja.html (RELEASE-NOTES-U4-ko.html)
+Using RELEA010.HTM;1 for  /RELEASE-NOTES-U4-ko.html (RELEASE-NOTES-U4-pt_BR.html)
+Using RELEA011.HTM;1 for  /RELEASE-NOTES-U4-pt_BR.html (RELEASE-NOTES-U4-zh_CN.html)
+Using RELEA012.HTM;1 for  /RELEASE-NOTES-U4-zh_CN.html (RELEASE-NOTES-U4-zh_TW.html)
+Using RELEA013.HTM;1 for  /RELEASE-NOTES-U4-zh_TW.html (RELEASE-NOTES-U5-de.html)
+Using RELEA003.;1 for  /RELEASE-NOTES-U4-en (RELEASE-NOTES-U5-en)
+Using RELEA014.HTM;1 for  /RELEASE-NOTES-U5-de.html (RELEASE-NOTES-U5-en.html)
+Using RELEA015.HTM;1 for  /RELEASE-NOTES-U5-en.html (RELEASE-NOTES-U5-es.html)
+Using RELEA016.HTM;1 for  /RELEASE-NOTES-U5-es.html (RELEASE-NOTES-U5-fr.html)
+Using RELEA017.HTM;1 for  /RELEASE-NOTES-U5-fr.html (RELEASE-NOTES-U5-it.html)
+Using RELEA018.HTM;1 for  /RELEASE-NOTES-U5-it.html (RELEASE-NOTES-U5-ja.html)
+Using RELEA019.HTM;1 for  /RELEASE-NOTES-U5-ja.html (RELEASE-NOTES-U5-ko.html)
+Using RELEA01A.HTM;1 for  /RELEASE-NOTES-U5-ko.html (RELEASE-NOTES-U5-pt_BR.html)
+Using RELEA01B.HTM;1 for  /RELEASE-NOTES-U5-pt_BR.html (RELEASE-NOTES-U5-zh_CN.html)
+Using RELEA01C.HTM;1 for  /RELEASE-NOTES-U5-zh_CN.html (RELEASE-NOTES-U5-zh_TW.html)
+Using RELEA01D.HTM;1 for  /RELEASE-NOTES-U5-zh_TW.html (RELEASE-NOTES-U6-de.html)
+Using RELEA004.;1 for  /RELEASE-NOTES-U5-en (RELEASE-NOTES-U6-en)
+Using RELEA01E.HTM;1 for  /RELEASE-NOTES-U6-de.html (RELEASE-NOTES-U6-en.html)
+Using RELEA01F.HTM;1 for  /RELEASE-NOTES-U6-en.html (RELEASE-NOTES-U6-es.html)
+Using RELEA01G.HTM;1 for  /RELEASE-NOTES-U6-es.html (RELEASE-NOTES-U6-fr.html)
+Using RELEA01H.HTM;1 for  /RELEASE-NOTES-U6-fr.html (RELEASE-NOTES-U6-it.html)
+Using RELEA01I.HTM;1 for  /RELEASE-NOTES-U6-it.html (RELEASE-NOTES-U6-ja.html)
+Using RELEA01J.HTM;1 for  /RELEASE-NOTES-U6-ja.html (RELEASE-NOTES-U6-ko.html)
+Using RELEA01K.HTM;1 for  /RELEASE-NOTES-U6-ko.html (RELEASE-NOTES-U6-pt_BR.html)
+Using RELEA01L.HTM;1 for  /RELEASE-NOTES-U6-pt_BR.html (RELEASE-NOTES-U6-zh_CN.html)
+Using RELEA01M.HTM;1 for  /RELEASE-NOTES-U6-zh_CN.html (RELEASE-NOTES-U6-zh_TW.html)
+Using RELEA01N.HTM;1 for  /RELEASE-NOTES-U6-zh_TW.html (RELEASE-NOTES-U7-de.html)
+Using RELEA005.;1 for  /RELEASE-NOTES-U6-en (RELEASE-NOTES-U7-en)
+Using RELEA01O.HTM;1 for  /RELEASE-NOTES-U7-de.html (RELEASE-NOTES-U7-en.html)
+Using RELEA01P.HTM;1 for  /RELEASE-NOTES-U7-en.html (RELEASE-NOTES-U7-es.html)
+Using RELEA01Q.HTM;1 for  /RELEASE-NOTES-U7-es.html (RELEASE-NOTES-U7-fr.html)
+Using RELEA01R.HTM;1 for  /RELEASE-NOTES-U7-fr.html (RELEASE-NOTES-U7-it.html)
+Using RELEA01S.HTM;1 for  /RELEASE-NOTES-U7-it.html (RELEASE-NOTES-U7-ja.html)
+Using RELEA01T.HTM;1 for  /RELEASE-NOTES-U7-ja.html (RELEASE-NOTES-U7-ko.html)
+Using RELEA01U.HTM;1 for  /RELEASE-NOTES-U7-ko.html (RELEASE-NOTES-U7-pt_BR.html)
+Using RELEA01V.HTM;1 for  /RELEASE-NOTES-U7-pt_BR.html (RELEASE-NOTES-U7-zh_CN.html)
+Using RELEA01W.HTM;1 for  /RELEASE-NOTES-U7-zh_CN.html (RELEASE-NOTES-U7-zh_TW.html)
+Using RELEA01X.HTM;1 for  /RELEASE-NOTES-U7-zh_TW.html (RELEASE-NOTES-U8-de.html)
+Using RELEA006.;1 for  /RELEASE-NOTES-U7-en (RELEASE-NOTES-U8-en)
+Using RELEA01Y.HTM;1 for  /RELEASE-NOTES-U8-de.html (RELEASE-NOTES-U8-en.html)
+Using RELEA01Z.HTM;1 for  /RELEASE-NOTES-U8-en.html (RELEASE-NOTES-U8-es.html)
+Using RELEA020.HTM;1 for  /RELEASE-NOTES-U8-es.html (RELEASE-NOTES-U8-fr.html)
+Using RELEA021.HTM;1 for  /RELEASE-NOTES-U8-fr.html (RELEASE-NOTES-U8-it.html)
+Using RELEA022.HTM;1 for  /RELEASE-NOTES-U8-it.html (RELEASE-NOTES-U8-ja.html)
+Using RELEA023.HTM;1 for  /RELEASE-NOTES-U8-ja.html (RELEASE-NOTES-U8-ko.html)
+Using RELEA024.HTM;1 for  /RELEASE-NOTES-U8-ko.html (RELEASE-NOTES-U8-pt_BR.html)
+Using RELEA025.HTM;1 for  /RELEASE-NOTES-U8-pt_BR.html (RELEASE-NOTES-U8-zh_CN.html)
+Using RELEA026.HTM;1 for  /RELEASE-NOTES-U8-zh_CN.html (RELEASE-NOTES-U8-zh_TW.html)
+Using RELEA027.HTM;1 for  /RELEASE-NOTES-U8-zh_TW.html (RELEASE-NOTES-U9-de.html)
+Using RELEA007.;1 for  /RELEASE-NOTES-U8-en (RELEASE-NOTES-U9-en)
+Using RELEA028.HTM;1 for  /RELEASE-NOTES-U9-de.html (RELEASE-NOTES-U9-en.html)
+Using RELEA029.HTM;1 for  /RELEASE-NOTES-U9-en.html (RELEASE-NOTES-U9-es.html)
+Using RELEA02A.HTM;1 for  /RELEASE-NOTES-U9-es.html (RELEASE-NOTES-U9-fr.html)
+Using RELEA02B.HTM;1 for  /RELEASE-NOTES-U9-fr.html (RELEASE-NOTES-U9-it.html)
+Using RELEA02C.HTM;1 for  /RELEASE-NOTES-U9-it.html (RELEASE-NOTES-U9-ja.html)
+Using RELEA02D.HTM;1 for  /RELEASE-NOTES-U9-ja.html (RELEASE-NOTES-U9-ko.html)
+Using RELEA02E.HTM;1 for  /RELEASE-NOTES-U9-ko.html (RELEASE-NOTES-U9-pt_BR.html)
+Using RELEA02F.HTM;1 for  /RELEASE-NOTES-U9-pt_BR.html (RELEASE-NOTES-U9-zh_CN.html)
+Using RELEA02G.HTM;1 for  /RELEASE-NOTES-U9-zh_CN.html (RELEASE-NOTES-U9-zh_TW.html)
+Using RELEA02H.HTM;1 for  /RELEASE-NOTES-U9-zh_TW.html (RELEASE-NOTES-de.html)
+Using RELEA008.;1 for  /RELEASE-NOTES-U9-en (RELEASE-NOTES-en)
+Using RELEA02I.HTM;1 for  /RELEASE-NOTES-de.html (RELEASE-NOTES-en.html)
+Using RELEA02J.HTM;1 for  /RELEASE-NOTES-en.html (RELEASE-NOTES-es.html)
+Using RELEA02K.HTM;1 for  /RELEASE-NOTES-es.html (RELEASE-NOTES-fr.html)
+Using RELEA02L.HTM;1 for  /RELEASE-NOTES-fr.html (RELEASE-NOTES-it.html)
+Using RELEA02M.HTM;1 for  /RELEASE-NOTES-it.html (RELEASE-NOTES-ja.html)
+Using RELEA02N.HTM;1 for  /RELEASE-NOTES-ja.html (RELEASE-NOTES-ko.html)
+Using RELEA02O.HTM;1 for  /RELEASE-NOTES-ko.html (RELEASE-NOTES-pt_BR.html)
+Using RELEA02P.HTM;1 for  /RELEASE-NOTES-pt_BR.html (RELEASE-NOTES-zh_CN.html)
+Using RELEA02Q.HTM;1 for  /RELEASE-NOTES-zh_CN.html (RELEASE-NOTES-zh_TW.html)
+Using RPM_G000.;1 for  /RPM-GPG-KEY (RPM-GPG-KEY-beta)
+Using REDHA000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-bind-2.0.0-14.2.noarch.rpm (redhat-config-netboot-0.1.30-1_EL3.i386.rpm)
+Using IMAGE000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/ImageMagick-5.5.6-25.i386.rpm (ImageMagick-perl-5.5.6-25.i386.rpm)
+Using OPENI000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/OpenIPMI-1.4.14-1.3E.11.i386.rpm (OpenIPMI-libs-1.4.14-1.3E.11.i386.rpm)
+Using XFREE000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-100dpi-fonts-4.3.0-122.EL.i386.rpm (XFree86-4.3.0-122.EL.i386.rpm)
+Using XFREE001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-4.3.0-122.EL.i386.rpm (XFree86-75dpi-fonts-4.3.0-122.EL.i386.rpm)
+Using XFREE002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-75dpi-fonts-4.3.0-122.EL.i386.rpm (XFree86-Mesa-libGL-4.3.0-122.EL.i386.rpm)
+Using XFREE003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-Mesa-libGL-4.3.0-122.EL.i386.rpm (XFree86-Mesa-libGLU-4.3.0-122.EL.i386.rpm)
+Using XFREE004.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-Mesa-libGLU-4.3.0-122.EL.i386.rpm (XFree86-Xnest-4.3.0-122.EL.i386.rpm)
+Using XFREE005.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-Xnest-4.3.0-122.EL.i386.rpm (XFree86-Xvfb-4.3.0-122.EL.i386.rpm)
+Using XFREE006.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-Xvfb-4.3.0-122.EL.i386.rpm (XFree86-base-fonts-4.3.0-122.EL.i386.rpm)
+Using XFREE007.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-base-fonts-4.3.0-122.EL.i386.rpm (XFree86-doc-4.3.0-122.EL.i386.rpm)
+Using XFREE008.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-doc-4.3.0-122.EL.i386.rpm (XFree86-font-utils-4.3.0-122.EL.i386.rpm)
+Using XFREE009.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-font-utils-4.3.0-122.EL.i386.rpm (XFree86-libs-4.3.0-122.EL.i386.rpm)
+Using XFREE00A.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-libs-4.3.0-122.EL.i386.rpm (XFree86-libs-data-4.3.0-122.EL.i386.rpm)
+Using XFREE00B.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-libs-data-4.3.0-122.EL.i386.rpm (XFree86-tools-4.3.0-122.EL.i386.rpm)
+Using XFREE00C.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-tools-4.3.0-122.EL.i386.rpm (XFree86-truetype-fonts-4.3.0-122.EL.i386.rpm)
+Using XFREE00D.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-truetype-fonts-4.3.0-122.EL.i386.rpm (XFree86-twm-4.3.0-122.EL.i386.rpm)
+Using XFREE00E.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-twm-4.3.0-122.EL.i386.rpm (XFree86-xauth-4.3.0-122.EL.i386.rpm)
+Using XFREE00F.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-xauth-4.3.0-122.EL.i386.rpm (XFree86-xdm-4.3.0-122.EL.i386.rpm)
+Using XFREE00G.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-xdm-4.3.0-122.EL.i386.rpm (XFree86-xfs-4.3.0-122.EL.i386.rpm)
+Using AUTHC000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/authconfig-4.3.7-4.i386.rpm (authconfig-gtk-4.3.7-4.i386.rpm)
+Using CDPAR000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/cdparanoia-alpha9.8-15.i386.rpm (cdparanoia-libs-alpha9.8-15.i386.rpm)
+Using COMMO000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/commons-beanutils-1.6.1-10.i386.rpm (commons-collections-2.1-9.i386.rpm)
+Using COMMO001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/commons-collections-2.1-9.i386.rpm (commons-digester-1.4.1-10.i386.rpm)
+Using COMMO002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/commons-digester-1.4.1-10.i386.rpm (commons-logging-1.0.2-12.i386.rpm)
+Using COMMO003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/commons-logging-1.0.2-12.i386.rpm (commons-modeler-1.0-5.i386.rpm)
+Using COMPA000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/compat-gcc-7.3-2.96.128.i386.rpm (compat-gcc-c++-7.3-2.96.128.i386.rpm)
+Using COMPA001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/compat-libstdc++-7.3-2.96.128.i386.rpm (compat-libstdc++-devel-7.3-2.96.128.i386.rpm)
+Using CRACK000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/cracklib-2.7-22.i386.rpm (cracklib-dicts-2.7-22.i386.rpm)
+Using CYRUS000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/cyrus-sasl-2.1.15-10.i386.rpm (cyrus-sasl-gssapi-2.1.15-10.i386.rpm)
+Using CYRUS001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/cyrus-sasl-gssapi-2.1.15-10.i386.rpm (cyrus-sasl-md5-2.1.15-10.i386.rpm)
+Using CYRUS002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/cyrus-sasl-md5-2.1.15-10.i386.rpm (cyrus-sasl-plain-2.1.15-10.i386.rpm)
+Using DESKT000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/desktop-backgrounds-basic-2.0-14.noarch.rpm (desktop-backgrounds-extra-2.0-14.noarch.rpm)
+Using DESKT001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/desktop-backgrounds-extra-2.0-14.noarch.rpm (desktop-file-utils-0.3-10.i386.rpm)
+Using DISTC000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/distcache-0.4.2-9.3.i386.rpm (distcache-devel-0.4.2-9.3.i386.rpm)
+Using ELFUT000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/elfutils-0.94.1-2.i386.rpm (elfutils-libelf-0.94.1-2.i386.rpm)
+Using EVOLU000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/evolution-1.4.5-20.el3.i386.rpm (evolution-connector-1.4.7-10.i386.rpm)
+Using GHOST000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/ghostscript-7.05-32.1.12.i386.rpm (ghostscript-fonts-5.50-9.noarch.rpm)
+Using GIMP_000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gimp-print-4.2.4-5.1.i386.rpm (gimp-print-cups-4.2.4-5.1.i386.rpm)
+Using GIMP_001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gimp-print-cups-4.2.4-5.1.i386.rpm (gimp-print-plugin-4.2.4-5.1.i386.rpm)
+Using GLIBC000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/glibc-2.3.2-95.50.i386.rpm (glibc-2.3.2-95.50.i686.rpm)
+Using GNOME000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gnome-python2-1.99.14-5.i386.rpm (gnome-python2-bonobo-1.99.14-5.i386.rpm)
+Using GNOME001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gnome-python2-bonobo-1.99.14-5.i386.rpm (gnome-python2-canvas-1.99.14-5.i386.rpm)
+Using GNOME002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gnome-python2-canvas-1.99.14-5.i386.rpm (gnome-python2-gtkhtml2-1.99.14-5.i386.rpm)
+Using IPTAB000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/iptables-1.2.8-12.3.i386.rpm (iptables-ipv6-1.2.8-12.3.i386.rpm)
+Using KERNE000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kernel-2.4.21-50.EL.athlon.rpm (kernel-2.4.21-50.EL.i686.rpm)
+Using KERNE001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kernel-smp-2.4.21-50.EL.athlon.rpm (kernel-smp-2.4.21-50.EL.i686.rpm)
+Using LIBBO000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libbonobo-2.2.3-1.i386.rpm (libbonoboui-2.2.2-1.i386.rpm)
+Using LIBGN000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libgnome-2.2.2-6.i386.rpm (libgnomecanvas-2.2.0.2-2.i386.rpm)
+Using LIBGN001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libgnomecanvas-2.2.0.2-2.i386.rpm (libgnomeprint22-2.2.1.3-5.i386.rpm)
+Using LIBGN002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libgnomeprint22-2.2.1.3-5.i386.rpm (libgnomeprintui22-2.2.1.3-2.0.i386.rpm)
+Using LIBGN003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libgnomeprintui22-2.2.1.3-2.0.i386.rpm (libgnomeui-2.2.1-1.i386.rpm)
+Using LIBXM000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libxml2-2.5.10-7.i386.rpm (libxml2-python-2.5.10-7.i386.rpm)
+Using MOD_A000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/mod_auth_mysql-20030510-2.ent.i386.rpm (mod_auth_pgsql-2.0.1-4.ent.1.i386.rpm)
+Using MOD_A001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/mod_auth_pgsql-2.0.1-4.ent.1.i386.rpm (mod_authz_ldap-0.22-5.i386.rpm)
+Using NET_S000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/net-snmp-5.0.9-2.30E.22.i386.rpm (net-snmp-libs-5.0.9-2.30E.22.i386.rpm)
+Using NETDU000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/netdump-server-0.7.16-1.1.i386.rpm (netdump-0.7.16-1.1.i386.rpm)
+Using OPENL000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/openldap-servers-2.0.27-23.i386.rpm (openldap-2.0.27-23.i386.rpm)
+Using OPENS000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/openssh-3.6.1p2-33.30.14.i386.rpm (openssh-askpass-3.6.1p2-33.30.14.i386.rpm)
+Using OPENS001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/openssh-askpass-3.6.1p2-33.30.14.i386.rpm (openssh-askpass-gnome-3.6.1p2-33.30.14.i386.rpm)
+Using OPENS002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/openssh-askpass-gnome-3.6.1p2-33.30.14.i386.rpm (openssh-clients-3.6.1p2-33.30.14.i386.rpm)
+Using OPENS003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/openssh-clients-3.6.1p2-33.30.14.i386.rpm (openssh-server-3.6.1p2-33.30.14.i386.rpm)
+Using OPENS004.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/openssl-0.9.7a-33.23.i386.rpm (openssl-0.9.7a-33.23.i686.rpm)
+Using PERL_000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/perl-HTML-Parser-3.26-17.i386.rpm (perl-HTML-Tagset-3.03-28.noarch.rpm)
+Using PERL_001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/perl-XML-Dumper-0.4-25.noarch.rpm (perl-XML-Encoding-1.01-23.noarch.rpm)
+Using PERL_002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/perl-XML-Encoding-1.01-23.noarch.rpm (perl-XML-Grove-0.46alpha-25.noarch.rpm)
+Using PERL_003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/perl-XML-Grove-0.46alpha-25.noarch.rpm (perl-XML-Parser-2.31-16.EL3.i386.rpm)
+Using PERL_004.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/perl-XML-Parser-2.31-16.EL3.i386.rpm (perl-XML-Twig-3.09-3.noarch.rpm)
+Using PERL_005.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/perl-libwww-perl-5.65-6.noarch.rpm (perl-libxml-enno-1.02-29.noarch.rpm)
+Using PERL_006.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/perl-libxml-enno-1.02-29.noarch.rpm (perl-libxml-perl-0.07-28.noarch.rpm)
+Using REDHA001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-netboot-0.1.30-1_EL3.i386.rpm (redhat-config-date-1.5.22-4.noarch.rpm)
+Using REDHA002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-date-1.5.22-4.noarch.rpm (redhat-config-httpd-1.1.0-4.30.2.noarch.rpm)
+Using REDHA003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-httpd-1.1.0-4.30.2.noarch.rpm (redhat-config-keyboard-1.1.4-1.noarch.rpm)
+Using REDHA004.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-keyboard-1.1.4-1.noarch.rpm (redhat-config-kickstart-2.3.22.1-3.noarch.rpm)
+Using REDHA005.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-kickstart-2.3.22.1-3.noarch.rpm (redhat-config-language-1.0.14-2.noarch.rpm)
+Using REDHA006.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-language-1.0.14-2.noarch.rpm (redhat-config-mouse-1.0.13-1.noarch.rpm)
+Using REDHA007.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-mouse-1.0.13-1.noarch.rpm (redhat-config-network-tui-1.2.65-1.noarch.rpm)
+Using REDHA008.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-network-tui-1.2.65-1.noarch.rpm (redhat-config-nfs-1.0.13-6.noarch.rpm)
+Using REDHA009.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-nfs-1.0.13-6.noarch.rpm (redhat-config-packages-1.2.9.2-1.noarch.rpm)
+Using REDHA00A.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-packages-1.2.9.2-1.noarch.rpm (redhat-config-printer-0.6.47.3.36-1.i386.rpm)
+Using REDHA00B.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-printer-0.6.47.3.36-1.i386.rpm (redhat-config-printer-gui-0.6.47.3.36-1.i386.rpm)
+Using REDHA00C.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-printer-gui-0.6.47.3.36-1.i386.rpm (redhat-config-proc-0.23-0.EL3.1.i386.rpm)
+Using REDHA00D.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-proc-0.23-0.EL3.1.i386.rpm (redhat-config-rootpassword-1.0.6-1.noarch.rpm)
+Using REDHA00E.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-rootpassword-1.0.6-1.noarch.rpm (redhat-config-samba-1.0.16-5.noarch.rpm)
+Using REDHA00F.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-samba-1.0.16-5.noarch.rpm (redhat-config-securitylevel-tui-1.2.9.2-1.i386.rpm)
+Using REDHA00G.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-securitylevel-tui-1.2.9.2-1.i386.rpm (redhat-config-securitylevel-1.2.9.2-1.i386.rpm)
+Using REDHA00H.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-securitylevel-1.2.9.2-1.i386.rpm (redhat-config-services-0.8.5-19.RHEL3.1.noarch.rpm)
+Using REDHA00I.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-services-0.8.5-19.RHEL3.1.noarch.rpm (redhat-config-soundcard-1.0.8-1.noarch.rpm)
+Using REDHA00J.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-soundcard-1.0.8-1.noarch.rpm (redhat-config-users-1.1.18-8.noarch.rpm)
+Using REDHA00K.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-users-1.1.18-8.noarch.rpm (redhat-config-xfree86-0.7.7-1.noarch.rpm)
+Using REDHA00L.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-logos-1.1.14.3-1.noarch.rpm (redhat-logviewer-0.9.3-5.noarch.rpm)
+Using REDHA00M.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-logviewer-0.9.3-5.noarch.rpm (redhat-lsb-1.3-3.1.EL3.i386.rpm)
+Using SEAMO000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/seamonkey-1.0.8-0.2.el3.i386.rpm (seamonkey-chat-1.0.8-0.2.el3.i386.rpm)
+Using SEAMO001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/seamonkey-chat-1.0.8-0.2.el3.i386.rpm (seamonkey-mail-1.0.8-0.2.el3.i386.rpm)
+Using SEAMO002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/seamonkey-mail-1.0.8-0.2.el3.i386.rpm (seamonkey-nspr-1.0.8-0.2.el3.i386.rpm)
+Using SEAMO003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/seamonkey-nspr-1.0.8-0.2.el3.i386.rpm (seamonkey-nss-1.0.8-0.2.el3.i386.rpm)
+Using SENDM000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/sendmail-8.12.11-4.RHEL3.6.i386.rpm (sendmail-doc-8.12.11-4.RHEL3.6.i386.rpm)
+Using USERM000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/usermode-1.68-5E.4.i386.rpm (usermode-gtk-1.68-5E.4.i386.rpm)
+Using IMAGE001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/ImageMagick-perl-5.5.6-25.i386.rpm (ImageMagick-c++-5.5.6-25.i386.rpm)
+Using OPENI001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/OpenIPMI-libs-1.4.14-1.3E.11.i386.rpm (OpenIPMI-devel-1.4.14-1.3E.11.i386.rpm)
+Using XFREE00H.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-xfs-4.3.0-122.EL.i386.rpm (XFree86-ISO8859-14-100dpi-fonts-4.3.0-122.EL.i386.rpm)
+Using XFREE00I.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-ISO8859-14-100dpi-fonts-4.3.0-122.EL.i386.rpm (XFree86-ISO8859-14-75dpi-fonts-4.3.0-122.EL.i386.rpm)
+Using XFREE00J.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-ISO8859-14-75dpi-fonts-4.3.0-122.EL.i386.rpm (XFree86-ISO8859-15-100dpi-fonts-4.3.0-122.EL.i386.rpm)
+Using XFREE00K.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-ISO8859-15-100dpi-fonts-4.3.0-122.EL.i386.rpm (XFree86-ISO8859-15-75dpi-fonts-4.3.0-122.EL.i386.rpm)
+Using XFREE00L.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-ISO8859-15-75dpi-fonts-4.3.0-122.EL.i386.rpm (XFree86-ISO8859-2-100dpi-fonts-4.3.0-122.EL.i386.rpm)
+Using XFREE00M.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-ISO8859-2-100dpi-fonts-4.3.0-122.EL.i386.rpm (XFree86-ISO8859-2-75dpi-fonts-4.3.0-122.EL.i386.rpm)
+Using XFREE00N.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-ISO8859-2-75dpi-fonts-4.3.0-122.EL.i386.rpm (XFree86-ISO8859-9-100dpi-fonts-4.3.0-122.EL.i386.rpm)
+Using XFREE00O.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-ISO8859-9-100dpi-fonts-4.3.0-122.EL.i386.rpm (XFree86-ISO8859-9-75dpi-fonts-4.3.0-122.EL.i386.rpm)
+Using XFREE00P.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-ISO8859-9-75dpi-fonts-4.3.0-122.EL.i386.rpm (XFree86-cyrillic-fonts-4.3.0-122.EL.i386.rpm)
+Using XFREE00Q.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-cyrillic-fonts-4.3.0-122.EL.i386.rpm (XFree86-devel-4.3.0-122.EL.i386.rpm)
+Using ASPEL000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/aspell-de-0.1.1-17.i386.rpm (aspell-devel-0.33.7.1-25.3.rhel3.i386.rpm)
+Using ASPEL001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/aspell-en-ca-0.33.7.1-25.3.rhel3.i386.rpm (aspell-en-gb-0.33.7.1-25.3.rhel3.i386.rpm)
+Using AUDIO000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/audiofile-0.2.3-7.1.i386.rpm (audiofile-devel-0.2.3-7.1.i386.rpm)
+Using AUTOC000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/autoconf-2.57-3.noarch.rpm (autoconf213-2.13-6.noarch.rpm)
+Using AUTOM000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/automake-1.6.3-5.noarch.rpm (automake14-1.4p6-6.noarch.rpm)
+Using AUTOM001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/automake14-1.4p6-6.noarch.rpm (automake15-1.5-7.noarch.rpm)
+Using BONOB000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/bonobo-activation-2.2.2-1.2E.i386.rpm (bonobo-activation-devel-2.2.2-1.2E.i386.rpm)
+Using CYRUS003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/cyrus-sasl-plain-2.1.15-10.i386.rpm (cyrus-sasl-devel-2.1.15-10.i386.rpm)
+Using DESKT002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/desktop-file-utils-0.3-10.i386.rpm (desktop-printing-0.1.10-15.1.i386.rpm)
+Using DOCBO000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/docbook-dtds-1.0-17.2.noarch.rpm (docbook-style-dsssl-1.76-8.noarch.rpm)
+Using DOCBO001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/docbook-style-dsssl-1.76-8.noarch.rpm (docbook-style-xsl-1.61.2-2.noarch.rpm)
+Using DOCBO002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/docbook-style-xsl-1.61.2-2.noarch.rpm (docbook-utils-0.6.13-5.noarch.rpm)
+Using DOCBO003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/docbook-utils-0.6.13-5.noarch.rpm (docbook-utils-pdf-0.6.13-5.noarch.rpm)
+Using E2FSP000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/e2fsprogs-1.32-15.3.i386.rpm (e2fsprogs-devel-1.32-15.3.i386.rpm)
+Using ELFUT001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/elfutils-libelf-0.94.1-2.i386.rpm (elfutils-devel-0.94.1-2.i386.rpm)
+Using ELFUT002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/elfutils-devel-0.94.1-2.i386.rpm (elfutils-libelf-devel-0.94.1-2.i386.rpm)
+Using FONTC000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/fontconfig-2.2.1-13.i386.rpm (fontconfig-devel-2.2.1-13.i386.rpm)
+Using FONTS000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/fonts-ISO8859-2-1.0-11.noarch.rpm (fonts-ISO8859-2-100dpi-1.0-11.noarch.rpm)
+Using FONTS001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/fonts-ISO8859-2-100dpi-1.0-11.noarch.rpm (fonts-ISO8859-2-75dpi-1.0-11.noarch.rpm)
+Using FONTS002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/fonts-KOI8-R-1.0-5.noarch.rpm (fonts-KOI8-R-100dpi-1.0-5.noarch.rpm)
+Using FONTS003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/fonts-KOI8-R-100dpi-1.0-5.noarch.rpm (fonts-KOI8-R-75dpi-1.0-5.noarch.rpm)
+Using FREET000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/freetype-2.1.4-6.el3.i386.rpm (freetype-devel-2.1.4-6.el3.i386.rpm)
+Using GCC_C000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gcc-c++-3.2.3-59.i386.rpm (gcc-c++-ssa-3.5ssa-0.20030801.48.i386.rpm)
+Using GCC_G000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gcc-g77-3.2.3-59.i386.rpm (gcc-g77-ssa-3.5ssa-0.20030801.48.i386.rpm)
+Using GCC_J000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gcc-java-3.2.3-59.i386.rpm (gcc-java-ssa-3.5ssa-0.20030801.48.i386.rpm)
+Using GCC_O000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gcc-objc-3.2.3-59.i386.rpm (gcc-objc-ssa-3.5ssa-0.20030801.48.i386.rpm)
+Using GDK_P000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gdk-pixbuf-0.22.0-13.el3.3.i386.rpm (gdk-pixbuf-devel-0.22.0-13.el3.3.i386.rpm)
+Using GDK_P001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gdk-pixbuf-devel-0.22.0-13.el3.3.i386.rpm (gdk-pixbuf-gnome-0.22.0-13.el3.3.i386.rpm)
+Using GIMP_002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gimp-print-plugin-4.2.4-5.1.i386.rpm (gimp-print-utils-4.2.4-5.1.i386.rpm)
+Using GNOME003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gnome-desktop-2.2.2-2.2E.i386.rpm (gnome-desktop-devel-2.2.2-2.2E.i386.rpm)
+Using GNOME004.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gnome-libs-1.4.1.2.90-34.2.i386.rpm (gnome-libs-devel-1.4.1.2.90-34.2.i386.rpm)
+Using GNOME005.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gnome-python2-gtkhtml2-1.99.14-5.i386.rpm (gnome-python2-applet-1.99.14-5.i386.rpm)
+Using GNOME006.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gnome-vfs2-2.2.5-2E.3.2.i386.rpm (gnome-vfs2-devel-2.2.5-2E.3.2.i386.rpm)
+Using GNOME007.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gnome-vfs2-devel-2.2.5-2E.3.2.i386.rpm (gnome-vfs2-extras-0.99.10-3.i386.rpm)
+Using GSTRE000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gstreamer-0.6.0-5.i386.rpm (gstreamer-plugins-0.6.0-18.i386.rpm)
+Using GSTRE001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gstreamer-plugins-0.6.0-18.i386.rpm (gstreamer-tools-0.6.0-5.i386.rpm)
+Using GTKHT000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gtkhtml2-2.2.0-6.i386.rpm (gtkhtml2-devel-2.2.0-6.i386.rpm)
+Using KDE_I000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Brazil-3.1.3-1.noarch.rpm (kde-i18n-British-3.1.3-1.noarch.rpm)
+Using KDE_I001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-British-3.1.3-1.noarch.rpm (kde-i18n-Chinese-3.1.3-1.noarch.rpm)
+Using KDE_I002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Chinese-3.1.3-1.noarch.rpm (kde-i18n-Chinese-Big5-3.1.3-1.noarch.rpm)
+Using KDE_I003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Chinese-Big5-3.1.3-1.noarch.rpm (kde-i18n-French-3.1.3-1.noarch.rpm)
+Using KDE_I004.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-French-3.1.3-1.noarch.rpm (kde-i18n-German-3.1.3-1.noarch.rpm)
+Using KDE_I005.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-German-3.1.3-1.noarch.rpm (kde-i18n-Italian-3.1.3-1.noarch.rpm)
+Using KDEBA000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kdebase-3.1.3-5.15.i386.rpm (kdebase-devel-3.1.3-5.15.i386.rpm)
+Using KDEGR000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kdegraphics-3.1.3-3.11.i386.rpm (kdegraphics-devel-3.1.3-3.11.i386.rpm)
+Using KDELI000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kdelibs-3.1.3-6.12.i386.rpm (kdelibs-devel-3.1.3-6.12.i386.rpm)
+Using KDENE000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kdenetwork-3.1.3-1.8.i386.rpm (kdenetwork-devel-3.1.3-1.8.i386.rpm)
+Using KDEUT000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kdeutils-3.1.3-3.1.i386.rpm (kdeutils-devel-3.1.3-3.1.i386.rpm)
+Using LIBAR000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libart_lgpl-2.3.11-2.i386.rpm (libart_lgpl-devel-2.3.11-2.i386.rpm)
+Using LIBBO001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libbonoboui-2.2.2-1.i386.rpm (libbonobo-devel-2.2.3-1.i386.rpm)
+Using LIBBO002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libbonobo-devel-2.2.3-1.i386.rpm (libbonoboui-devel-2.2.2-1.i386.rpm)
+Using LIBGC000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libgcj-ssa-3.5ssa-0.20030801.48.i386.rpm (libgcj-ssa-devel-3.5ssa-0.20030801.48.i386.rpm)
+Using LIBGL000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libglade2-2.0.1-3.i386.rpm (libglade2-devel-2.0.1-3.i386.rpm)
+Using LIBGN004.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libgnomeui-2.2.1-1.i386.rpm (libgnome-devel-2.2.2-6.i386.rpm)
+Using LIBGN005.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libgnome-devel-2.2.2-6.i386.rpm (libgnomecanvas-devel-2.2.0.2-2.i386.rpm)
+Using LIBGN006.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libgnomecanvas-devel-2.2.0.2-2.i386.rpm (libgnomeprint22-devel-2.2.1.3-5.i386.rpm)
+Using LIBGN007.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libgnomeprint22-devel-2.2.1.3-5.i386.rpm (libgnomeprintui22-devel-2.2.1.3-2.0.i386.rpm)
+Using LIBGN008.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libgnomeprintui22-devel-2.2.1.3-2.0.i386.rpm (libgnomeui-devel-2.2.1-1.i386.rpm)
+Using LIBJP000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libjpeg-6b-30.i386.rpm (libjpeg-devel-6b-30.i386.rpm)
+Using LIBMU000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libmudflap-3.5ssa-0.20030801.48.i386.rpm (libmudflap-devel-3.5ssa-0.20030801.48.i386.rpm)
+Using LIBOL000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libole2-0.2.4-6.i386.rpm (libole2-devel-0.2.4-6.i386.rpm)
+Using LIBRS000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/librsvg2-2.2.3-6.el3.1.i386.rpm (librsvg2-devel-2.2.3-6.el3.1.i386.rpm)
+Using LIBST000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libstdc++-3.2.3-59.i386.rpm (libstdc++-devel-3.2.3-59.i386.rpm)
+Using LIBST001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libstdc++-devel-3.2.3-59.i386.rpm (libstdc++-ssa-3.5ssa-0.20030801.48.i386.rpm)
+Using LIBST002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libstdc++-ssa-3.5ssa-0.20030801.48.i386.rpm (libstdc++-ssa-devel-3.5ssa-0.20030801.48.i386.rpm)
+Using LIBTE000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libtermcap-2.0.8-35.i386.rpm (libtermcap-devel-2.0.8-35.i386.rpm)
+Using LIBTI000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libtiff-3.5.7-25.el3.4.i386.rpm (libtiff-devel-3.5.7-25.el3.4.i386.rpm)
+Using LIBTO000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libtool-libs-1.4.3-6.i386.rpm (libtool-1.4.3-6.i386.rpm)
+Using LIBUN000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libungif-4.1.0-15.el3.3.i386.rpm (libungif-devel-4.1.0-15.el3.3.i386.rpm)
+Using LIBUS000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libuser-0.51.7-1.EL3.3.i386.rpm (libuser-devel-0.51.7-1.EL3.3.i386.rpm)
+Using LIBVO000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libvorbis-1.0-7.i386.rpm (libvorbis-devel-1.0-7.i386.rpm)
+Using LIBXM001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libxml2-python-2.5.10-7.i386.rpm (libxml2-devel-2.5.10-7.i386.rpm)
+Using LIBXS000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libxslt-1.0.33-5.i386.rpm (libxslt-devel-1.0.33-5.i386.rpm)
+Using LOCKD000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/lockdev-1.0.1-5.1.i386.rpm (lockdev-devel-1.0.1-5.1.i386.rpm)
+Using MAN_P000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/man-pages-1.60-7.rhel3.noarch.rpm (man-pages-de-0.4-6.noarch.rpm)
+Using MAN_P001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/man-pages-de-0.4-6.noarch.rpm (man-pages-fr-0.9.7-7.noarch.rpm)
+Using MAN_P002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/man-pages-fr-0.9.7-7.noarch.rpm (man-pages-it-0.3.0-12.noarch.rpm)
+Using MAN_P003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/man-pages-it-0.3.0-12.noarch.rpm (man-pages-ja-20041215-1.EL3.noarch.rpm)
+Using MODUT000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/modutils-2.4.25-14.EL.i386.rpm (modutils-devel-2.4.25-14.EL.i386.rpm)
+Using NAUTI000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/nautilus-2.2.4-6.E.i386.rpm (nautilus-cd-burner-0.3.2-2E.i386.rpm)
+Using NAUTI001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/nautilus-cd-burner-0.3.2-2E.i386.rpm (nautilus-media-0.2.1-5.1E.i386.rpm)
+Using NCURS000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/ncurses-5.3-9.4.i386.rpm (ncurses-devel-5.3-9.4.i386.rpm)
+Using NET_S001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/net-snmp-libs-5.0.9-2.30E.22.i386.rpm (net-snmp-devel-5.0.9-2.30E.22.i386.rpm)
+Using OPENL001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/openldap-2.0.27-23.i386.rpm (openldap-devel-2.0.27-23.i386.rpm)
+Using OPENM000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/openmotif-2.2.3-5.RHEL3.7.i386.rpm (openmotif-devel-2.2.3-5.RHEL3.7.i386.rpm)
+Using OPENM001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/openmotif-devel-2.2.3-5.RHEL3.7.i386.rpm (openmotif21-2.1.30-9.RHEL3.8.i386.rpm)
+Using OPENO000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/openoffice.org-1.1.2-38.2.0.EL3.i386.rpm (openoffice.org-i18n-1.1.2-38.2.0.EL3.i386.rpm)
+Using OPENO001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/openoffice.org-i18n-1.1.2-38.2.0.EL3.i386.rpm (openoffice.org-libs-1.1.2-38.2.0.EL3.i386.rpm)
+Using OPENS005.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/openssl-0.9.7a-33.23.i686.rpm (openssl-devel-0.9.7a-33.23.i386.rpm)
+Using OPROF000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/oprofile-0.5.4-22.i386.rpm (oprofile-devel-0.5.4-22.i386.rpm)
+Using PCIUT000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/pciutils-2.1.10-7.EL3.1.i386.rpm (pciutils-devel-2.1.10-7.EL3.1.i386.rpm)
+Using PILOT000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/pilot-link-0.11.7-1.1.i386.rpm (pilot-link-devel-0.11.7-1.1.i386.rpm)
+Using READL000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/readline-4.3-5.2.i386.rpm (readline-devel-4.3-5.2.i386.rpm)
+Using REDHA00N.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-config-xfree86-0.7.7-1.noarch.rpm (redhat-config-network-1.2.65-1.noarch.rpm)
+Using REDHA00O.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-release-3ES-13.9.5.i386.rpm (redhat-rpm-config-8.0.28-4.noarch.rpm)
+Using RH_PO000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/rh-postgresql-libs-7.3.19-1.i386.rpm (rh-postgresql-devel-7.3.19-1.i386.rpm)
+Using SANE_000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/sane-backends-1.0.9-5.7.i386.rpm (sane-backends-devel-1.0.9-5.7.i386.rpm)
+Using SEAMO004.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/seamonkey-nss-1.0.8-0.2.el3.i386.rpm (seamonkey-dom-inspector-1.0.8-0.2.el3.i386.rpm)
+Using SEAMO005.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/seamonkey-dom-inspector-1.0.8-0.2.el3.i386.rpm (seamonkey-js-debugger-1.0.8-0.2.el3.i386.rpm)
+Using START000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/startup-notification-0.5-1.i386.rpm (startup-notification-devel-0.5-1.i386.rpm)
+Using SWITC000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/switchdesk-3.9.8-17.i386.rpm (switchdesk-gnome-3.9.8-17.i386.rpm)
+Using SWITC001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/switchdesk-gnome-3.9.8-17.i386.rpm (switchdesk-kde-3.9.8-17.i386.rpm)
+Using TTFON000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/ttfonts-zh_CN-2.12-6.noarch.rpm (ttfonts-zh_TW-2.11-22.2.noarch.rpm)
+Using UNIXO000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/unixODBC-2.2.8-2.3.0.2.i386.rpm (unixODBC-kde-2.2.8-2.3.0.2.i386.rpm)
+Using UP2DA000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/up2date-4.5.5-7.el3.i386.rpm (up2date-gnome-4.5.5-7.el3.i386.rpm)
+Using FREEW000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/FreeWnn-libs-1.11-36.3.i386.rpm (FreeWnn-1.11-36.3.i386.rpm)
+Using FREEW001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/FreeWnn-1.11-36.3.i386.rpm (FreeWnn-devel-1.11-36.3.i386.rpm)
+Using IMAGE002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/ImageMagick-c++-5.5.6-25.i386.rpm (ImageMagick-c++-devel-5.5.6-25.i386.rpm)
+Using IMAGE003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/ImageMagick-c++-devel-5.5.6-25.i386.rpm (ImageMagick-devel-5.5.6-25.i386.rpm)
+Using OPENI002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/OpenIPMI-devel-1.4.14-1.3E.11.i386.rpm (OpenIPMI-tools-1.4.14-1.3E.11.i386.rpm)
+Using WNN6_000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/Wnn6-SDK-1.0-25.i386.rpm (Wnn6-SDK-devel-1.0-25.i386.rpm)
+Using XFREE00R.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-devel-4.3.0-122.EL.i386.rpm (XFree86-sdk-4.3.0-122.EL.i386.rpm)
+Using XFREE00S.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/XFree86-sdk-4.3.0-122.EL.i386.rpm (XFree86-syriac-fonts-4.3.0-122.EL.i386.rpm)
+Using ALCHE000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/alchemist-1.0.27-1.i386.rpm (alchemist-devel-1.0.27-1.i386.rpm)
+Using ANACO000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/anaconda-product-3-1ES.noarch.rpm (anaconda-9.1.6.20-4.RHEL.i386.rpm)
+Using ANACO001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/anaconda-9.1.6.20-4.RHEL.i386.rpm (anaconda-help-9.1-3.RHEL.noarch.rpm)
+Using ANACO002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/anaconda-help-9.1-3.RHEL.noarch.rpm (anaconda-images-9.1-3.RHEL.noarch.rpm)
+Using ANACO003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/anaconda-images-9.1-3.RHEL.noarch.rpm (anaconda-runtime-9.1.6.20-4.RHEL.i386.rpm)
+Using ASPEL002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/aspell-devel-0.33.7.1-25.3.rhel3.i386.rpm (aspell-da-1.4.22-7.i386.rpm)
+Using ASPEL003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/aspell-en-gb-0.33.7.1-25.3.rhel3.i386.rpm (aspell-es-0.2-13.i386.rpm)
+Using ASPEL004.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/aspell-nl-0.1-17.i386.rpm (aspell-no-0.3-6.i386.rpm)
+Using ASPEL005.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/aspell-pt_BR-2.4-12.i386.rpm (aspell-pt-0.1-12.i386.rpm)
+Using BEECR000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/beecrypt-3.0.1-0.20030630.i386.rpm (beecrypt-devel-3.0.1-0.20030630.i386.rpm)
+Using BITMA000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/bitmap-fonts-0.3-2.noarch.rpm (bitmap-fonts-cjk-0.3-2.noarch.rpm)
+Using BUSYB000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/busybox-0.60.5-11.i386.rpm (busybox-anaconda-0.60.5-11.i386.rpm)
+Using CDPAR001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/cdparanoia-libs-alpha9.8-15.i386.rpm (cdparanoia-devel-alpha9.8-15.i386.rpm)
+Using CDREC000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/cdrecord-2.01.0.a32-0.EL3.6.i386.rpm (cdrecord-devel-2.01.0.a32-0.EL3.6.i386.rpm)
+Using COMPA002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/compat-gcc-c++-7.3-2.96.128.i386.rpm (compat-glibc-7.x-2.2.4.32.6.i386.rpm)
+Using ETHER000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/ethereal-0.99.0-EL3.2.i386.rpm (ethereal-gnome-0.99.0-EL3.2.i386.rpm)
+Using EVOLU001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/evolution-connector-1.4.7-10.i386.rpm (evolution-devel-1.4.5-20.el3.i386.rpm)
+Using GHOST001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/ghostscript-fonts-5.50-9.noarch.rpm (ghostscript-devel-7.05-32.1.12.i386.rpm)
+Using GIMP_003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gimp-print-utils-4.2.4-5.1.i386.rpm (gimp-print-devel-4.2.4-5.1.i386.rpm)
+Using GNOME008.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gnome-pilot-2.0.10-1.i386.rpm (gnome-pilot-devel-2.0.10-1.i386.rpm)
+Using GPHOT000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gphoto2-2.1.0-7.1.i386.rpm (gphoto2-devel-2.1.0-7.1.i386.rpm)
+Using GSTRE002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gstreamer-tools-0.6.0-5.i386.rpm (gstreamer-devel-0.6.0-5.i386.rpm)
+Using GSTRE003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gstreamer-devel-0.6.0-5.i386.rpm (gstreamer-plugins-devel-0.6.0-18.i386.rpm)
+Using GTKHT001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/gtkhtml3-3.0.9-7.i386.rpm (gtkhtml3-devel-3.0.9-7.i386.rpm)
+Using KDE_I006.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Italian-3.1.3-1.noarch.rpm (kde-i18n-Afrikaans-3.1.3-1.noarch.rpm)
+Using KDE_I007.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Afrikaans-3.1.3-1.noarch.rpm (kde-i18n-Catalan-3.1.3-1.noarch.rpm)
+Using KDE_I008.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Catalan-3.1.3-1.noarch.rpm (kde-i18n-Czech-3.1.3-1.noarch.rpm)
+Using KDE_I009.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Czech-3.1.3-1.noarch.rpm (kde-i18n-Danish-3.1.3-1.noarch.rpm)
+Using KDE_I00A.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Danish-3.1.3-1.noarch.rpm (kde-i18n-Dutch-3.1.3-1.noarch.rpm)
+Using KDE_I00B.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Dutch-3.1.3-1.noarch.rpm (kde-i18n-Estonian-3.1.3-1.noarch.rpm)
+Using KDE_I00C.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Estonian-3.1.3-1.noarch.rpm (kde-i18n-Finnish-3.1.3-1.noarch.rpm)
+Using KDE_I00D.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Finnish-3.1.3-1.noarch.rpm (kde-i18n-Greek-3.1.3-1.noarch.rpm)
+Using KDE_I00E.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Greek-3.1.3-1.noarch.rpm (kde-i18n-Hebrew-3.1.3-1.noarch.rpm)
+Using KDE_I00F.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Hebrew-3.1.3-1.noarch.rpm (kde-i18n-Hungarian-3.1.3-1.noarch.rpm)
+Using KDE_I00G.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Hungarian-3.1.3-1.noarch.rpm (kde-i18n-Icelandic-3.1.3-1.noarch.rpm)
+Using KDE_I00H.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Icelandic-3.1.3-1.noarch.rpm (kde-i18n-Japanese-3.1.3-1.noarch.rpm)
+Using KDE_I00I.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Japanese-3.1.3-1.noarch.rpm (kde-i18n-Korean-3.1.3-1.noarch.rpm)
+Using KDE_I00J.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Korean-3.1.3-1.noarch.rpm (kde-i18n-Norwegian-3.1.3-1.noarch.rpm)
+Using KDE_I00K.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Norwegian-3.1.3-1.noarch.rpm (kde-i18n-Norwegian-Nynorsk-3.1.3-1.noarch.rpm)
+Using KDE_I00L.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Norwegian-Nynorsk-3.1.3-1.noarch.rpm (kde-i18n-Polish-3.1.3-1.noarch.rpm)
+Using KDE_I00M.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Polish-3.1.3-1.noarch.rpm (kde-i18n-Portuguese-3.1.3-1.noarch.rpm)
+Using KDE_I00N.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Portuguese-3.1.3-1.noarch.rpm (kde-i18n-Romanian-3.1.3-1.noarch.rpm)
+Using KDE_I00O.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Romanian-3.1.3-1.noarch.rpm (kde-i18n-Russian-3.1.3-1.noarch.rpm)
+Using KDE_I00P.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Russian-3.1.3-1.noarch.rpm (kde-i18n-Serbian-3.1.3-1.noarch.rpm)
+Using KDE_I00Q.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Serbian-3.1.3-1.noarch.rpm (kde-i18n-Slovak-3.1.3-1.noarch.rpm)
+Using KDE_I00R.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Slovak-3.1.3-1.noarch.rpm (kde-i18n-Slovenian-3.1.3-1.noarch.rpm)
+Using KDE_I00S.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Slovenian-3.1.3-1.noarch.rpm (kde-i18n-Spanish-3.1.3-1.noarch.rpm)
+Using KDE_I00T.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Spanish-3.1.3-1.noarch.rpm (kde-i18n-Swedish-3.1.3-1.noarch.rpm)
+Using KDE_I00U.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Swedish-3.1.3-1.noarch.rpm (kde-i18n-Turkish-3.1.3-1.noarch.rpm)
+Using KDE_I00V.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kde-i18n-Turkish-3.1.3-1.noarch.rpm (kde-i18n-Ukrainian-3.1.3-1.noarch.rpm)
+Using KDEGA000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kdegames-3.1.3-3.2.i386.rpm (kdegames-devel-3.1.3-3.2.i386.rpm)
+Using KDEMU000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kdemultimedia-3.1.3-3.1.i386.rpm (kdemultimedia-devel-3.1.3-3.1.i386.rpm)
+Using KERNE002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kernel-hugemem-2.4.21-50.EL.i686.rpm (kernel-hugemem-unsupported-2.4.21-50.EL.i686.rpm)
+Using KERNE003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kernel-smp-2.4.21-50.EL.i686.rpm (kernel-smp-unsupported-2.4.21-50.EL.athlon.rpm)
+Using KERNE004.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kernel-smp-unsupported-2.4.21-50.EL.athlon.rpm (kernel-smp-unsupported-2.4.21-50.EL.i686.rpm)
+Using KERNE005.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kernel-smp-unsupported-2.4.21-50.EL.i686.rpm (kernel-source-2.4.21-50.EL.i386.rpm)
+Using KERNE006.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kernel-utils-2.4-8.37.15.i386.rpm (kernel-unsupported-2.4.21-50.EL.athlon.rpm)
+Using KERNE007.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/kernel-unsupported-2.4.21-50.EL.athlon.rpm (kernel-unsupported-2.4.21-50.EL.i686.rpm)
+Using LIBAT000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libattr-2.2.0-1.i386.rpm (libattr-devel-2.2.0-1.i386.rpm)
+Using LIBGA000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libgal2-1.99.10-1.i386.rpm (libgal2-devel-1.99.10-1.i386.rpm)
+Using LIBGL001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libglade2-devel-2.0.1-3.i386.rpm (libglade-0.17-12.1.i386.rpm)
+Using LIBGL002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libglade-0.17-12.1.i386.rpm (libglade-devel-0.17-12.1.i386.rpm)
+Using LIBGT000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libgtop2-2.0.2-3.i386.rpm (libgtop2-devel-2.0.2-3.i386.rpm)
+Using LIBMR000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libmrproject-0.9-5.i386.rpm (libmrproject-devel-0.9-5.i386.rpm)
+Using LIBPN000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libpng10-1.0.13-17.i386.rpm (libpng10-devel-1.0.13-17.i386.rpm)
+Using LIBSO000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libsoup-1.99.26-1.i386.rpm (libsoup-devel-1.99.26-1.i386.rpm)
+Using LIBTA000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libtabe-0.2.6-6.EL.i386.rpm (libtabe-devel-0.2.6-6.EL.i386.rpm)
+Using LIBWN000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libwnck-2.2.3-1.rhel3.i386.rpm (libwnck-devel-2.2.3-1.rhel3.i386.rpm)
+Using LIBWV000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/libwvstreams-3.70-10.i386.rpm (libwvstreams-devel-3.70-10.i386.rpm)
+Using MAN_P004.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/man-pages-ja-20041215-1.EL3.noarch.rpm (man-pages-cs-0.16-1.noarch.rpm)
+Using MAN_P005.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/man-pages-cs-0.16-1.noarch.rpm (man-pages-da-0.1.1-10.noarch.rpm)
+Using MAN_P006.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/man-pages-da-0.1.1-10.noarch.rpm (man-pages-es-1.28-7.noarch.rpm)
+Using MAN_P007.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/man-pages-es-1.28-7.noarch.rpm (man-pages-ko-1.48-8.noarch.rpm)
+Using MAN_P008.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/man-pages-ko-1.48-8.noarch.rpm (man-pages-pl-0.22-13.noarch.rpm)
+Using MAN_P009.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/man-pages-pl-0.22-13.noarch.rpm (man-pages-ru-0.7-6.noarch.rpm)
+Using MOD_P000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/mod_perl-1.99_09-10.ent.i386.rpm (mod_perl-devel-1.99_09-10.ent.i386.rpm)
+Using NET_S002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/net-snmp-devel-5.0.9-2.30E.22.i386.rpm (net-snmp-perl-5.0.9-2.30E.22.i386.rpm)
+Using NET_S003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/net-snmp-perl-5.0.9-2.30E.22.i386.rpm (net-snmp-utils-5.0.9-2.30E.22.i386.rpm)
+Using OPENH000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/openh323-1.11.2-4.1E.i386.rpm (openh323-devel-1.11.2-4.1E.i386.rpm)
+Using OPENL002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/openldap-devel-2.0.27-23.i386.rpm (openldap-clients-2.0.27-23.i386.rpm)
+Using OPENS006.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/openssl-devel-0.9.7a-33.23.i386.rpm (openssl-perl-0.9.7a-33.23.i386.rpm)
+Using PERL_007.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/perl-DBD-MySQL-2.1021-4.EL3.i386.rpm (perl-DBD-Pg-1.21-2.i386.rpm)
+Using PERL_008.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/perl-Digest-HMAC-1.01-11.1.noarch.rpm (perl-Digest-SHA1-2.01-15.1.i386.rpm)
+Using PYORB000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/pyorbit-1.99.3-5.i386.rpm (pyorbit-devel-1.99.3-5.i386.rpm)
+Using REDHA00P.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/redhat-switch-mail-0.5.20-1.noarch.rpm (redhat-switch-mail-gnome-0.5.20-1.noarch.rpm)
+Using RH_PO001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/rh-postgresql-devel-7.3.19-1.i386.rpm (rh-postgresql-7.3.19-1.i386.rpm)
+Using RH_PO002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/rh-postgresql-7.3.19-1.i386.rpm (rh-postgresql-contrib-7.3.19-1.i386.rpm)
+Using RH_PO003.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/rh-postgresql-contrib-7.3.19-1.i386.rpm (rh-postgresql-docs-7.3.19-1.i386.rpm)
+Using RH_PO004.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/rh-postgresql-docs-7.3.19-1.i386.rpm (rh-postgresql-jdbc-7.3.19-1.i386.rpm)
+Using RH_PO005.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/rh-postgresql-jdbc-7.3.19-1.i386.rpm (rh-postgresql-pl-7.3.19-1.i386.rpm)
+Using RH_PO006.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/rh-postgresql-pl-7.3.19-1.i386.rpm (rh-postgresql-python-7.3.19-1.i386.rpm)
+Using RH_PO007.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/rh-postgresql-python-7.3.19-1.i386.rpm (rh-postgresql-server-7.3.19-1.i386.rpm)
+Using RH_PO008.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/rh-postgresql-server-7.3.19-1.i386.rpm (rh-postgresql-tcl-7.3.19-1.i386.rpm)
+Using RH_PO009.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/rh-postgresql-tcl-7.3.19-1.i386.rpm (rh-postgresql-test-7.3.19-1.i386.rpm)
+Using SEAMO006.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/seamonkey-js-debugger-1.0.8-0.2.el3.i386.rpm (seamonkey-devel-1.0.8-0.2.el3.i386.rpm)
+Using SEAMO007.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/seamonkey-devel-1.0.8-0.2.el3.i386.rpm (seamonkey-nspr-devel-1.0.8-0.2.el3.i386.rpm)
+Using SEAMO008.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/seamonkey-nspr-devel-1.0.8-0.2.el3.i386.rpm (seamonkey-nss-devel-1.0.8-0.2.el3.i386.rpm)
+Using SENDM001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/sendmail-doc-8.12.11-4.RHEL3.6.i386.rpm (sendmail-cf-8.12.11-4.RHEL3.6.i386.rpm)
+Using SENDM002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/sendmail-cf-8.12.11-4.RHEL3.6.i386.rpm (sendmail-devel-8.12.11-4.RHEL3.6.i386.rpm)
+Using TTFON001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/ttfonts-zh_TW-2.11-22.2.noarch.rpm (ttfonts-ja-1.2-26.ent.3.noarch.rpm)
+Using TTFON002.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/ttfonts-ja-1.2-26.ent.3.noarch.rpm (ttfonts-ko-1.0.11-31.noarch.rpm)
+Using UNIXO001.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/unixODBC-kde-2.2.8-2.3.0.2.i386.rpm (unixODBC-devel-2.2.8-2.3.0.2.i386.rpm)
+Using W3C_L000.RPM;1 for  /home/dank/tmp/automate-rhel3-iso-fuse.Z6243/RedHat/RPMS/w3c-libwww-5.4.0-5.i386.rpm (w3c-libwww-devel-5.4.0-5.i386.rpm)
+Size of boot image is 2880 sectors -> Emulating a 1440 kB floppy
+  0.57% done, estimate finish Mon Jul 30 15:22:20 2007
+  1.14% done, estimate finish Mon Jul 30 15:20:52 2007
+  1.71% done, estimate finish Mon Jul 30 15:20:23 2007
+  2.28% done, estimate finish Mon Jul 30 15:20:08 2007
+  2.85% done, estimate finish Mon Jul 30 15:20:35 2007
+  3.41% done, estimate finish Mon Jul 30 15:20:23 2007
+  3.98% done, estimate finish Mon Jul 30 15:20:15 2007
+  4.55% done, estimate finish Mon Jul 30 15:20:08 2007
+  5.12% done, estimate finish Mon Jul 30 15:20:04 2007
+  5.69% done, estimate finish Mon Jul 30 15:20:00 2007
+  6.26% done, estimate finish Mon Jul 30 15:20:44 2007
+  6.83% done, estimate finish Mon Jul 30 15:20:38 2007
+  7.40% done, estimate finish Mon Jul 30 15:20:46 2007
+  7.96% done, estimate finish Mon Jul 30 15:20:40 2007
+  8.53% done, estimate finish Mon Jul 30 15:20:35 2007
+  9.10% done, estimate finish Mon Jul 30 15:20:30 2007
+  9.67% done, estimate finish Mon Jul 30 15:20:37 2007
+ 10.24% done, estimate finish Mon Jul 30 15:20:33 2007
+ 10.81% done, estimate finish Mon Jul 30 15:20:29 2007
+ 11.38% done, estimate finish Mon Jul 30 15:20:26 2007
+ 11.95% done, estimate finish Mon Jul 30 15:20:23 2007
+ 12.51% done, estimate finish Mon Jul 30 15:20:52 2007
+ 13.08% done, estimate finish Mon Jul 30 15:20:49 2007
+ 13.65% done, estimate finish Mon Jul 30 15:20:45 2007
+ 14.22% done, estimate finish Mon Jul 30 15:20:49 2007
+ 14.79% done, estimate finish Mon Jul 30 15:20:46 2007
+ 15.36% done, estimate finish Mon Jul 30 15:20:43 2007
+ 15.93% done, estimate finish Mon Jul 30 15:20:40 2007
+ 16.50% done, estimate finish Mon Jul 30 15:20:49 2007
+ 17.06% done, estimate finish Mon Jul 30 15:20:47 2007
+ 17.63% done, estimate finish Mon Jul 30 15:20:50 2007
+ 18.20% done, estimate finish Mon Jul 30 15:20:47 2007
+ 18.77% done, estimate finish Mon Jul 30 15:20:44 2007
+ 19.34% done, estimate finish Mon Jul 30 15:20:42 2007
+ 19.91% done, estimate finish Mon Jul 30 15:20:45 2007
+ 20.48% done, estimate finish Mon Jul 30 15:20:43 2007
+ 21.04% done, estimate finish Mon Jul 30 15:20:41 2007
+ 21.61% done, estimate finish Mon Jul 30 15:20:39 2007
+ 22.18% done, estimate finish Mon Jul 30 15:20:37 2007
+ 22.75% done, estimate finish Mon Jul 30 15:20:35 2007
+ 23.32% done, estimate finish Mon Jul 30 15:20:37 2007
+ 23.89% done, estimate finish Mon Jul 30 15:20:36 2007
+ 24.46% done, estimate finish Mon Jul 30 15:20:34 2007
+ 25.03% done, estimate finish Mon Jul 30 15:20:32 2007
+ 25.60% done, estimate finish Mon Jul 30 15:20:43 2007
+ 26.16% done, estimate finish Mon Jul 30 15:20:49 2007
+ 26.73% done, estimate finish Mon Jul 30 15:20:47 2007
+ 27.30% done, estimate finish Mon Jul 30 15:20:45 2007
+ 27.87% done, estimate finish Mon Jul 30 15:20:43 2007
+ 28.44% done, estimate finish Mon Jul 30 15:20:45 2007
+ 29.01% done, estimate finish Mon Jul 30 15:20:44 2007
+ 29.58% done, estimate finish Mon Jul 30 15:20:46 2007
+ 30.15% done, estimate finish Mon Jul 30 15:20:47 2007
+ 30.71% done, estimate finish Mon Jul 30 15:20:46 2007
+ 31.28% done, estimate finish Mon Jul 30 15:20:44 2007
+ 31.85% done, estimate finish Mon Jul 30 15:20:43 2007
+ 32.42% done, estimate finish Mon Jul 30 15:20:45 2007
+ 32.99% done, estimate finish Mon Jul 30 15:20:43 2007
+ 33.56% done, estimate finish Mon Jul 30 15:20:42 2007
+ 34.13% done, estimate finish Mon Jul 30 15:20:41 2007
+ 34.70% done, estimate finish Mon Jul 30 15:20:42 2007
+ 35.27% done, estimate finish Mon Jul 30 15:20:41 2007
+ 35.83% done, estimate finish Mon Jul 30 15:20:40 2007
+ 36.40% done, estimate finish Mon Jul 30 15:20:39 2007
+ 36.97% done, estimate finish Mon Jul 30 15:20:40 2007
+ 37.54% done, estimate finish Mon Jul 30 15:20:42 2007
+ 38.11% done, estimate finish Mon Jul 30 15:20:48 2007
+ 38.68% done, estimate finish Mon Jul 30 15:20:47 2007
+ 39.25% done, estimate finish Mon Jul 30 15:20:46 2007
+ 39.81% done, estimate finish Mon Jul 30 15:20:45 2007
+ 40.38% done, estimate finish Mon Jul 30 15:20:49 2007
+ 40.95% done, estimate finish Mon Jul 30 15:20:50 2007
+ 41.52% done, estimate finish Mon Jul 30 15:20:49 2007
+ 42.09% done, estimate finish Mon Jul 30 15:20:48 2007
+ 42.66% done, estimate finish Mon Jul 30 15:20:47 2007
+ 43.23% done, estimate finish Mon Jul 30 15:20:48 2007
+ 43.80% done, estimate finish Mon Jul 30 15:20:47 2007
+ 44.36% done, estimate finish Mon Jul 30 15:20:46 2007
+ 44.93% done, estimate finish Mon Jul 30 15:20:47 2007
+ 45.50% done, estimate finish Mon Jul 30 15:20:46 2007
+ 46.07% done, estimate finish Mon Jul 30 15:20:45 2007
+ 46.64% done, estimate finish Mon Jul 30 15:20:44 2007
+ 47.21% done, estimate finish Mon Jul 30 15:20:45 2007
+ 47.78% done, estimate finish Mon Jul 30 15:20:52 2007
+ 48.35% done, estimate finish Mon Jul 30 15:20:51 2007
+ 48.91% done, estimate finish Mon Jul 30 15:20:50 2007
+ 49.48% done, estimate finish Mon Jul 30 15:20:49 2007
+ 50.05% done, estimate finish Mon Jul 30 15:20:48 2007
+ 50.62% done, estimate finish Mon Jul 30 15:20:51 2007
+ 51.19% done, estimate finish Mon Jul 30 15:20:50 2007
+ 51.76% done, estimate finish Mon Jul 30 15:20:50 2007
+ 52.33% done, estimate finish Mon Jul 30 15:20:50 2007
+ 52.90% done, estimate finish Mon Jul 30 15:20:50 2007
+ 53.47% done, estimate finish Mon Jul 30 15:20:49 2007
+ 54.03% done, estimate finish Mon Jul 30 15:20:48 2007
+ 54.60% done, estimate finish Mon Jul 30 15:20:49 2007
+ 55.17% done, estimate finish Mon Jul 30 15:20:48 2007
+ 55.74% done, estimate finish Mon Jul 30 15:20:47 2007
+ 56.31% done, estimate finish Mon Jul 30 15:20:46 2007
+ 56.88% done, estimate finish Mon Jul 30 15:20:47 2007
+ 57.45% done, estimate finish Mon Jul 30 15:20:46 2007
+ 58.01% done, estimate finish Mon Jul 30 15:20:46 2007
+ 58.58% done, estimate finish Mon Jul 30 15:20:45 2007
+ 59.15% done, estimate finish Mon Jul 30 15:20:46 2007
+ 59.72% done, estimate finish Mon Jul 30 15:20:52 2007
+ 60.29% done, estimate finish Mon Jul 30 15:20:51 2007
+ 60.86% done, estimate finish Mon Jul 30 15:20:50 2007
+ 61.43% done, estimate finish Mon Jul 30 15:20:49 2007
+ 62.00% done, estimate finish Mon Jul 30 15:20:52 2007
+ 62.56% done, estimate finish Mon Jul 30 15:20:51 2007
+ 63.13% done, estimate finish Mon Jul 30 15:20:50 2007
+ 63.70% done, estimate finish Mon Jul 30 15:20:49 2007
+ 64.27% done, estimate finish Mon Jul 30 15:20:50 2007
+ 64.84% done, estimate finish Mon Jul 30 15:20:49 2007
+ 65.41% done, estimate finish Mon Jul 30 15:20:49 2007
+ 65.98% done, estimate finish Mon Jul 30 15:20:48 2007
+ 66.55% done, estimate finish Mon Jul 30 15:20:47 2007
+ 67.11% done, estimate finish Mon Jul 30 15:20:48 2007
+ 67.68% done, estimate finish Mon Jul 30 15:20:47 2007
+ 68.25% done, estimate finish Mon Jul 30 15:20:47 2007
+ 68.82% done, estimate finish Mon Jul 30 15:20:46 2007
+ 69.39% done, estimate finish Mon Jul 30 15:20:45 2007
+ 69.96% done, estimate finish Mon Jul 30 15:20:45 2007
+ 70.53% done, estimate finish Mon Jul 30 15:20:45 2007
+ 71.10% done, estimate finish Mon Jul 30 15:20:45 2007
+ 71.67% done, estimate finish Mon Jul 30 15:20:44 2007
+ 72.23% done, estimate finish Mon Jul 30 15:20:43 2007
+ 72.80% done, estimate finish Mon Jul 30 15:20:43 2007
+ 73.37% done, estimate finish Mon Jul 30 15:20:44 2007
+ 73.94% done, estimate finish Mon Jul 30 15:20:50 2007
+ 74.51% done, estimate finish Mon Jul 30 15:20:50 2007
+ 75.08% done, estimate finish Mon Jul 30 15:20:50 2007
+ 75.65% done, estimate finish Mon Jul 30 15:20:49 2007
+ 76.22% done, estimate finish Mon Jul 30 15:20:48 2007
+ 76.78% done, estimate finish Mon Jul 30 15:20:49 2007
+ 77.35% done, estimate finish Mon Jul 30 15:20:49 2007
+ 77.92% done, estimate finish Mon Jul 30 15:20:48 2007
+ 78.49% done, estimate finish Mon Jul 30 15:20:47 2007
+ 79.06% done, estimate finish Mon Jul 30 15:20:48 2007
+ 79.63% done, estimate finish Mon Jul 30 15:20:47 2007
+ 80.20% done, estimate finish Mon Jul 30 15:20:47 2007
+ 80.77% done, estimate finish Mon Jul 30 15:20:46 2007
+ 81.34% done, estimate finish Mon Jul 30 15:20:46 2007
+ 81.90% done, estimate finish Mon Jul 30 15:20:46 2007
+ 82.47% done, estimate finish Mon Jul 30 15:20:46 2007
+ 83.04% done, estimate finish Mon Jul 30 15:20:45 2007
+ 83.61% done, estimate finish Mon Jul 30 15:20:46 2007
+ 84.18% done, estimate finish Mon Jul 30 15:20:45 2007
+ 84.75% done, estimate finish Mon Jul 30 15:20:52 2007
+ 85.32% done, estimate finish Mon Jul 30 15:20:51 2007
+ 85.88% done, estimate finish Mon Jul 30 15:20:51 2007
+ 86.45% done, estimate finish Mon Jul 30 15:20:50 2007
+ 87.02% done, estimate finish Mon Jul 30 15:20:51 2007
+ 87.59% done, estimate finish Mon Jul 30 15:20:51 2007
+ 88.16% done, estimate finish Mon Jul 30 15:20:51 2007
+ 88.73% done, estimate finish Mon Jul 30 15:20:50 2007
+ 89.30% done, estimate finish Mon Jul 30 15:20:50 2007
+ 89.87% done, estimate finish Mon Jul 30 15:20:50 2007
+ 90.43% done, estimate finish Mon Jul 30 15:20:50 2007
+ 91.00% done, estimate finish Mon Jul 30 15:20:49 2007
+ 91.57% done, estimate finish Mon Jul 30 15:20:49 2007
+ 92.14% done, estimate finish Mon Jul 30 15:20:49 2007
+ 92.71% done, estimate finish Mon Jul 30 15:20:49 2007
+ 93.28% done, estimate finish Mon Jul 30 15:20:48 2007
+ 93.85% done, estimate finish Mon Jul 30 15:20:51 2007
+ 94.42% done, estimate finish Mon Jul 30 15:20:52 2007
+ 94.99% done, estimate finish Mon Jul 30 15:20:52 2007
+ 95.55% done, estimate finish Mon Jul 30 15:20:51 2007
+ 96.12% done, estimate finish Mon Jul 30 15:20:51 2007
+ 96.69% done, estimate finish Mon Jul 30 15:20:52 2007
+ 97.26% done, estimate finish Mon Jul 30 15:20:52 2007
+ 97.83% done, estimate finish Mon Jul 30 15:20:51 2007
+ 98.40% done, estimate finish Mon Jul 30 15:20:51 2007
+ 98.97% done, estimate finish Mon Jul 30 15:20:50 2007
+ 99.54% done, estimate finish Mon Jul 30 15:20:51 2007
+Total translation table size: 348099
+Total rockridge attributes bytes: 147516
+Total directory bytes: 242992
+Path table size(bytes): 262
+Max brk space used 18c000
+879094 extents written (1716 MB)
+ssh-keygen -t rsa -N "" -C "Host Key" -f .out/ssh/host_rsa
+Generating public/private rsa key pair.
+Your identification has been saved in .out/ssh/host_rsa.
+Your public key has been saved in .out/ssh/host_rsa.pub.
+The key fingerprint is:
+92:b3:ce:b3:2e:78:60:81:fa:38:cc:e4:37:0f:a4:c5 Host Key
+wget http://knuth.research.sys/checkpoint/RHES-3-x86/subversion-1.4.3-1.i386.rpm -O upstream/rpm/subversion-1.4.3-1.i386.rpm
+--15:20:51--  http://knuth.research.sys/checkpoint/RHES-3-x86/subversion-1.4.3-1.i386.rpm
+           => `upstream/rpm/subversion-1.4.3-1.i386.rpm'
+Resolving knuth.research.sys... 10.14.120.39
+Connecting to knuth.research.sys|10.14.120.39|:80... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 1,460,998 (1.4M) [application/x-redhat-package-manager]
+
+100%[====================================>] 1,460,998    184.92K/s    ETA 00:00
+
+15:21:20 (49.95 KB/s) - `upstream/rpm/subversion-1.4.3-1.i386.rpm' saved [1460998/1460998]
+
+[Checking MD5 sum for subversion-1.4.3-1.i386.rpm] grep upstream/rpm/subversion-1.4.3-1.i386.rpm upstream/md5sums | md5sum -c -
+upstream/rpm/subversion-1.4.3-1.i386.rpm: OK
+wget http://knuth.research.sys/checkpoint/RHES-3-x86/neon-0.24.7-1.i386.rpm -O upstream/rpm/neon-0.24.7-1.i386.rpm
+--15:21:20--  http://knuth.research.sys/checkpoint/RHES-3-x86/neon-0.24.7-1.i386.rpm
+           => `upstream/rpm/neon-0.24.7-1.i386.rpm'
+Resolving knuth.research.sys... 10.14.120.39
+Connecting to knuth.research.sys|10.14.120.39|:80... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 54,012 (53K) [application/x-redhat-package-manager]
+
+100%[====================================>] 54,012       144.56K/s             
+
+15:21:21 (144.24 KB/s) - `upstream/rpm/neon-0.24.7-1.i386.rpm' saved [54012/54012]
+
+[Checking MD5 sum for neon-0.24.7-1.i386.rpm] grep upstream/rpm/neon-0.24.7-1.i386.rpm upstream/md5sums | md5sum -c -
+upstream/rpm/neon-0.24.7-1.i386.rpm: OK
+wget http://knuth.research.sys/checkpoint/RHES-3-x86/xmlstarlet-1.0.1-1.i586.rpm -O upstream/rpm/xmlstarlet-1.0.1-1.i586.rpm
+--15:21:21--  http://knuth.research.sys/checkpoint/RHES-3-x86/xmlstarlet-1.0.1-1.i586.rpm
+           => `upstream/rpm/xmlstarlet-1.0.1-1.i586.rpm'
+Resolving knuth.research.sys... 10.14.120.39
+Connecting to knuth.research.sys|10.14.120.39|:80... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 526,898 (515K) [application/x-redhat-package-manager]
+
+100%[====================================>] 526,898      244.10K/s             
+
+15:21:23 (243.39 KB/s) - `upstream/rpm/xmlstarlet-1.0.1-1.i586.rpm' saved [526898/526898]
+
+[Checking MD5 sum for xmlstarlet-1.0.1-1.i586.rpm] grep upstream/rpm/xmlstarlet-1.0.1-1.i586.rpm upstream/md5sums | md5sum -c -
+upstream/rpm/xmlstarlet-1.0.1-1.i586.rpm: OK
+qemu-img create -f qcow2 .out/qemu/qemu.img 40G
+Formatting '.out/qemu/qemu.img', fmt=qcow2, size=41943040 kB
+[Installing Linux] kvm -cdrom .out/autoinstall.iso -hda .out/qemu/qemu.img -boot d -pidfile .out/qemu/pidfile -net tap,ifname=tap0 -no-reboot -m 512 -net nic,model=rtl8139,macaddr=00:02:04:06:08:0a -net nic,model=ne2k_pci,macaddr=00:03:05:07:09:0b -vnc :0 -monitor null -serial tcp:172.17.42.1:10023,server,nowait -daemonize
+Could not configure '/dev/rtc' to have a 1024 Hz timer. This is not a fatal
+error, but for better emulation accuracy either use a 2.6 host Linux kernel or
+type 'echo 1024 > /proc/sys/dev/rtc/max-user-freq' as root.
+SIOCSIFADDR: Permission denied
+SIOCSIFFLAGS: Permission denied
+SIOCSIFFLAGS: Permission denied
+can't add tap0 to bridge ath1: Operation not supported
+socat - tcp:172.17.42.1:10023
+Linux version 2.4.21-50.ELBOOT (brewbuilder@hs20-bc1-7.build.redhat.com) (gcc version 3.2.3 20030502 (Red Hat Linux 3.2.3-58)) #1 Tue May 8 17:10:23 EDT 2007
+BIOS-provided physical RAM map:
+ BIOS-e820: 0000000000000000 - 000000000009fc00 (usable)
+ BIOS-e820: 000000000009fc00 - 00000000000a0000 (reserved)
+ BIOS-e820: 00000000000e8000 - 0000000000100000 (reserved)
+ BIOS-e820: 0000000000100000 - 000000001fff0000 (usable)
+ BIOS-e820: 000000001fff0000 - 0000000020000000 (ACPI data)
+ BIOS-e820: 00000000fffc0000 - 0000000100000000 (reserved)
+511MB LOWMEM available.
+NX protection not present; using segment protection
+On node 0 totalpages: 131056
+zone(0): 4096 pages.
+zone(1): 126960 pages.
+zone(2): 0 pages.
+Kernel command line: initrd=initrd.img ks=cdrom:/ks.cfg console=ttyS0,57600 BOOT_IMAGE=vmlinuz 
+Initializing CPU#0
+Detected 2397.549 MHz processor.
+Console: colour VGA+ 80x25
+Calibrating delay loop... 3984.58 BogoMIPS
+Page-cache hash table entries: 131072 (order: 7, 512 KB)
+Page-pin hash table entries: 32768 (order: 5, 128 KB)
+Dentry cache hash table entries: 65536 (order: 7, 512 KB)
+Inode cache hash table entries: 32768 (order: 6, 256 KB)
+Buffer cache hash table entries: 32768 (order: 5, 128 KB)
+Memory: 510656k/524224k available (1292k kernel code, 11004k reserved, 333k data, 136k init, 0k highmem)
+zapping low mappings.
+Mount cache hash table entries: 512 (order: 0, 4096 bytes)
+CPU: L1 I-cache: 8K, L1 D-cache: 0K
+CPU: L2 cache: 128K
+Intel machine check architecture supported.
+Intel machine check reporting enabled on CPU#0.
+CPU: Intel QEMU Virtual CPU version 0.9.0 stepping 03
+Enabling fast FPU save and restore... done.
+Enabling unmasked SIMD FPU exception support... done.
+Checking 'hlt' instruction... OK.
+Checking for popad bug... OK.
+POSIX conformance testing by UNIFIX
+Process timing init...done.
+mtrr: v1.40 (20010327) Richard Gooch (rgooch@atnf.csiro.au)
+mtrr: detected mtrr type: Intel
+PCI: PCI BIOS revision 2.10 entry at 0xfa130, last bus=0
+PCI: Using configuration type 1
+PCI: Probing PCI hardware
+PCI: Using IRQ router PIIX [8086/7000] at 00:01.0
+PCI: PIIX3: Enabling Passive Release on 00:01.0
+Limiting direct PCI/PCI transfers.
+Activating ISA DMA hang workarounds.
+Linux NET4.0 for Linux 2.4
+Based upon Swansea University Computer Society NET3.039
+Initializing RT netlink socket
+BIOS EDD facility v0.09 2003-Jan-22, 1 devices found
+Starting kswapd
+aio_setup: num_physpages = 32764
+aio_setup: sizeof(struct page) = 52
+pty: 256 Unix98 ptys configured
+Serial driver version 5.05c (2001-07-08) with MANY_PORTS SHARE_IRQ SERIAL_PCI enabled
+ttyS0 at 0x03f8 (irq = 4) is a 16450
+FDC 0 is a S82078B
+NET4: Frame Diverter 0.46
+RAMDISK driver initialized: 256 RAM disks of 8192K size 1024 blocksize
+loop: loaded (max 8 devices)
+Uniform Multi-Platform E-IDE driver Revision: 7.00beta4-2.4
+ide: Assuming 33MHz system bus speed for PIO modes; override with idebus=xx
+PIIX3: IDE controller at PCI slot 00:01.1
+PIIX3: chipset revision 0
+PIIX3: not 100% native mode: will probe irqs later
+    ide0: BM-DMA at 0xc000-0xc007, BIOS settings: hda:pio, hdb:pio
+    ide1: BM-DMA at 0xc008-0xc00f, BIOS settings: hdc:pio, hdd:pio
+hda: C/H/S=1023/0/63 from BIOS ignored
+hda: QEMU HARDDISK, ATA DISK drive
+blk: queue c0312e00, I/O limit 4095Mb (mask 0xffffffff)
+hdc: QEMU CD-ROM, ATAPI CD/DVD-ROM drive
+ide0 at 0x1f0-0x1f7,0x3f6 on irq 14
+ide1 at 0x170-0x177,0x376 on irq 15
+hda: attached ide-disk driver.
+hda: setmax_ext LBA 281474976710656, native  83886080
+hda: 83886080 sectors (42950 MB) w/256KiB Cache, CHS=5221/255/63, (U)DMA
+hdc: attached ide-cdrom driver.
+hdc: ATAPI 4X CD-ROM drive, 512kB Cache, (U)DMA
+Uniform CD-ROM driver Revision: 3.12
+ide-floppy driver 0.99.newide
+Partition check:
+ hda: unknown partition table
+ide-floppy driver 0.99.newide
+usb.c: registered new driver usbdevfs
+usb.c: registered new driver hub
+host/usb-uhci.c: $Revision: 1.275 $ time 17:11:14 May  8 2007
+host/usb-uhci.c: High bandwidth mode enabled
+host/usb-uhci.c: v1.275:USB Universal Host Controller Interface driver
+usb.c: registered new driver hiddev
+usb.c: registered new driver hid
+hid-core.c: v1.8.1 Andreas Gal, Vojtech Pavlik <vojtech@suse.cz>
+hid-core.c: USB HID support drivers
+mice: PS/2 mouse device common for all mice
+NET4: Linux TCP/IP 1.0 for NET4.0
+IP: routing cache hash table of 4096 buckets, 32Kbytes
+TCP: Hash tables configured (established 32768 bind 65536)
+NET4: Unix domain sockets 1.0/SMP for Linux NET4.0.
+RAMDISK: Compressed image found at block 0
+Freeing initrd memory: 534k freed
+VFS: Mounted root (ext2 filesystem).
+md5-2.1.15-10.i386.rpm)
+ed Hat install init version 9.1.6.20 starting
+mounting /proc filesystem... done
+mounting /dev/pts (unix98 pty) filesystem... done
+Red Hat install init version 9.1.6.20 using a serial console
+remember, cereal is an important part of a nutritionally balanced breakfast.
+
+trying to remount root filesystem read write... done
+mounting /tmp as ramfs... done
+running install...
+running /sbin/loader
+Running anaconda, the Red Hat Enterprise Linux system installer - please wait...
+Probing for video card:   Cirrus Logic GD544x
+Probing for monitor type:   Unknown monitor
+Probing for mouse type:   Generic - Wheel Mouse (PS/2)
+Reading package information...
+Checking dependencies in packages selected for installation...
+Formatting / file system...
+
+
+In progress...    
+Formatting /boot file system...
+In progress...    
+Transferring install image to hard drive...
+In progress...    Completed 
+Preparing RPM transaction...
+In progress...    Completed 
+Starting install process, this may take several minutes...
+Preparing to install...
+In progress...    
+Installing hwdata-0.101.30-1...  Done [1/288]
+Installing libgcc-3.2.3-59...  Done [2/288]
+Installing redhat-logos-1.1.14.3-1...  Done [3/288]
+Installing setup-2.5.27-1...  Done [4/288]
+Installing filesystem-2.2.1-3...  Done [5/288]
+Installing basesystem-8.0-2...  Done [6/288]
+Installing termcap-11.0.1-17.1...  Done [7/288]
+Installing tzdata-2007d-1.el3...  Done [8/288]
+Installing glibc-common-2.3.2-95.50...  Done [9/288]
+Installing glibc-2.3.2-95.50...  Done [10/288]
+Installing beecrypt-3.0.1-0.20030630...  Done [11/288]
+Installing bzip2-libs-1.0.2-11.EL3.4...  Done [12/288]
+Installing chkconfig-1.3.13.5.EL3-1...  Done [13/288]
+Installing cracklib-2.7-22...  Done [14/288]
+Installing db4-4.1.25-8.1...  Done [15/288]
+Installing e2fsprogs-1.32-15.3...  Done [16/288]
+Installing elfutils-libelf-0.94.1-2...  Done [17/288]
+Installing ethtool-1.8-3.3...  Done [18/288]
+Installing expat-1.95.5-6...  Done [19/288]
+Installing gdbm-1.8.0-20...  Done [20/288]
+Installing glib-1.2.10-11.1...  Done [21/288]
+Installing glib2-2.2.3-2.0...  Done [22/288]
+Installing gmp-4.1.2-5...  Done [23/288]
+Installing hdparm-5.4-1...  Done [24/288]
+Installing laus-libs-0.1-76RHEL3...  Done [25/288]
+Installing libattr-2.2.0-1...  Done [26/288]
+Installing libacl-2.2.3-1...  Done [27/288]
+Installing libtermcap-2.0.8-35...  Done [28/288]
+Installing losetup-2.11y-31.23...  Done [29/288]
+Installing lvm-1.0.8-14...  Done [30/288]
+Installing mingetty-1.06-1...  Done [31/288]
+Installing mktemp-1.5-18.2...  Done [32/288]
+Installing bash-2.05b-41.7...  Done [33/288]
+Installing iproute-2.4.7-11.30E.2...  Done [34/288]
+Installing iputils-20020927-11.30.5...  Done [35/288]
+Installing MAKEDEV-3.3.12.3-1...  Done [36/288]
+Installing mount-2.11y-31.23...  Done [37/288]
+Installing net-tools-1.60-20E.10...  Done [38/288]
+Installing pcre-3.9-10.2...  Done [39/288]
+Installing popt-1.8.2-32_nonptl...  Done [40/288]
+Installing raidtools-1.00.3-10.EL3...  Done [41/288]
+Installing rootfiles-7.2-6...  Done [42/288]
+Installing setserial-2.17-12...  Done [43/288]
+Installing shadow-utils-4.0.3-29.RHEL3...  Done [44/288]
+Installing slang-1.4.5-18...  Done [45/288]
+Installing newt-0.51.5-1...  Done [46/288]
+Installing usbutils-0.11-2...  Done [47/288]
+Installing vim-minimal-6.3.046-0.30E.4...  Done [48/288]
+Installing words-2-21...  Done [49/288]
+Installing cracklib-dicts-2.7-22...  Done [50/288]
+Installing zlib-1.1.4-10.EL3...  Done [51/288]
+Installing file-3.39-9.EL3.4...  Done [52/288]
+Installing info-4.5-3.el3.1...  Done [53/288]
+Installing cpio-2.5-4.RHEL3...  Done [54/288]
+Installing ed-0.2-33...  Done [55/288]
+Installing findutils-4.1.7-9.1...  Done [56/288]
+Installing gawk-3.1.1-9...  Done [57/288]
+Installing grep-2.5.1-24.6...  Done [58/288]
+Installing coreutils-4.5.3-28.7...  Done [59/288]
+Installing ash-0.3.8-16...  Done [60/288]
+Installing grub-0.93-4.8...  Done [61/288]
+Installing krb5-libs-1.2.7-64...  Done [62/288]
+Installing modutils-2.4.25-14.EL...  Done [63/288]
+Installing ncurses-5.3-9.4...  Done [64/288]
+Installing gpm-1.19.3-27.2...  Done [65/288]
+Installing less-378-12...  Done [66/288]
+Installing gzip-1.3.3-14.rhel3...  Done [67/288]
+Installing openssl-0.9.7a-33.23...  Done [68/288]
+Installing procps-2.0.17-13.10...  Done [69/288]
+Installing psmisc-21.3-2.1...  Done [70/288]
+Installing readline-4.3-5.2...  Done [71/288]
+Installing python-2.2.3-6.6...  Done [72/288]
+Installing pyxf86config-0.3.5-1...  Done [73/288]
+Installing rhpl-0.110.6-1...  Done [74/288]
+Installing sed-4.0.7-9.el3...  Done [75/288]
+Installing dev-3.3.12.3-1...  Done [76/288]
+Installing pam-0.75-72...  Done [77/288]
+Installing authconfig-4.3.7-4...  Done [78/288]
+Installing kudzu-1.1.22.15-1...  Done [79/288]
+Installing sysklogd-1.4.1-26_EL3...  Done [80/288]
+Installing SysVinit-2.85-4.4...  Done [81/288]
+Installing tar-1.13.25-15.RHEL3...  Done [82/288]
+Installing mkinitrd-3.5.13.6-1...  Done [83/288]
+Installing util-linux-2.11y-31.23...  Done [84/288]
+Installing which-2.14-7...  Done [85/288]
+Installing initscripts-7.31.31.EL-1...  Done [86/288]
+Installing cyrus-sasl-2.1.15-10...  Done [87/288]
+Installing cyrus-sasl-md5-2.1.15-10...  Done [88/288]
+Installing hotplug-2002_04_01-20.6...  Done [89/288]
+Installing kernel-2.4.21-50.EL...  Done [90/288]
+Installing openldap-2.0.27-23...  Done [91/288]
+Installing libuser-0.51.7-1.EL3.3...  Done [92/288]
+Installing passwd-0.68-3.1...  Done [93/288]
+Installing usermode-1.68-5E.4...  Done [94/288]
+Installing kbd-1.08-10.6...  Done [95/288]
+Installing redhat-config-mouse-1.0.13-1...  Done [96/288]
+Installing rpm-4.2.3-32_nonptl...  Done [97/288]
+Installing rpm-libs-4.2.3-32_nonptl...  Done [98/288]
+Installing mailcap-2.1.14-1...  Done [99/288]
+Installing man-pages-1.60-7.rhel3...  Done [100/288]
+Installing redhat-menus-0.39-1...  Done [101/288]
+Installing rmt-0.4b37-4.EL3...  Done [102/288]
+Installing dump-0.4b37-4.EL3...  Done [103/288]
+Installing specspo-3EL-1...  Done [104/288]
+Installing dos2unix-3.1-15.EL.22...  Done [105/288]
+Installing dosfstools-2.8-10...  Done [106/288]
+Installing eject-2.0.13-2...  Done [107/288]
+Installing elfutils-0.94.1-2...  Done [108/288]
+Installing finger-0.17-18...  Done [109/288]
+Installing hesiod-3.0.2-28.1...  Done [110/288]
+Installing jfsutils-1.1.2-2...  Done [111/288]
+Installing krbafs-1.1.1-11...  Done [112/288]
+Installing lha-1.14i-10.4...  Done [113/288]
+Installing attr-2.2.0-1...  Done [114/288]
+Installing acl-2.2.3-1...  Done [115/288]
+Installing libjpeg-6b-30...  Done [116/288]
+Installing libstdc++-3.2.3-59...  Done [117/288]
+Installing libtool-libs-1.4.3-6...  Done [118/288]
+Installing lslk-1.29-8...  Done [119/288]
+Installing lsof-4.63-4.1...  Done [120/288]
+Installing mailx-8.1.1-31.EL3...  Done [121/288]
+Installing bzip2-1.0.2-11.EL3.4...  Done [122/288]
+Installing crontabs-1.10-5...  Done [123/288]
+Installing htmlview-2.0.0-10...  Done [124/288]
+Installing mt-st-0.7-11...  Done [125/288]
+Installing nc-1.10-18...  Done [126/288]
+Installing ncompress-4.2.4-40.rhel3...  Done [127/288]
+Installing OpenIPMI-libs-1.4.14-1.3E.11...  Done [128/288]
+Installing pam_passwdqc-0.7.5-1...  Done [129/288]
+Installing pam_smb-1.1.7-1...  Done [130/288]
+Installing parted-1.6.3-29.5...  Done [131/288]
+Installing patch-2.5.4-16...  Done [132/288]
+Installing pax-3.0-6...  Done [133/288]
+Installing perl-5.8.0-94.EL3...  Done [134/288]
+Installing fbset-2.1-13...  Done [135/288]
+Installing perl-Filter-1.29-3...  Done [136/288]
+Installing logrotate-3.6.9-2.RHEL3...  Done [137/288]
+Installing procmail-3.22-10.el3...  Done [138/288]
+Installing pspell-0.12.2-16.1...  Done [139/288]
+Installing rdate-1.3-2...  Done [140/288]
+Installing rdist-6.1.5-35.30.3...  Done [141/288]
+Installing rpmdb-redhat-3-0.20070529...  Done [142/288]
+Installing rsh-0.17-18.el3...  Done [143/288]
+Installing rsync-2.5.7-5.3E...  Done [144/288]
+Installing schedutils-1.3.0-5...  Done [145/288]
+Installing sendmail-doc-8.12.11-4.RHEL3.6...  Done [146/288]
+Installing setarch-1.3-1...  Done [147/288]
+Installing lockdev-1.0.1-5.1...  Done [148/288]
+Installing netconfig-0.8.19-1.2...  Done [149/288]
+Installing ntsysv-1.3.13.5.EL3-1...  Done [150/288]
+Installing setuptool-1.13-1...  Done [151/288]
+Installing slocate-2.7-3.RHEL3.6...  Done [152/288]
+Installing star-1.5a08-4...  Done [153/288]
+Installing symlinks-1.2-18...  Done [154/288]
+Installing tcp_wrappers-7.6-34.1...  Done [155/288]
+Installing traceroute-1.4a12-20...  Done [156/288]
+Installing unix2dos-2.2-19.EL.25...  Done [157/288]
+Installing unzip-5.50-35.EL3...  Done [158/288]
+Installing wireless-tools-26-2...  Done [159/288]
+Installing XFree86-libs-data-4.3.0-122.EL...  Done [160/288]
+Installing zip-2.3-16.1...  Done [161/288]
+Installing freetype-2.1.4-6.el3...  Done [162/288]
+Installing fontconfig-2.2.1-13...  Done [163/288]
+Installing libpng-1.2.2-27...  Done [164/288]
+Installing libtiff-3.5.7-25.el3.4...  Done [165/288]
+Installing libxml2-2.5.10-7...  Done [166/288]
+Installing aspell-config-0.33.7.1-25.3.rhel3...  Done [167/288]
+Installing binutils-2.14.90.0.4-42...  Done [168/288]
+Installing diffutils-2.8.1-8...  Done [169/288]
+Installing at-3.1.8-60_EL3...  Done [170/288]
+Installing groff-1.18.1-28.EL3.3...  Done [171/288]
+Installing jwhois-3.2.2-1...  Done [172/288]
+Installing krb5-workstation-1.2.7-64...  Done [173/288]
+Installing krbafs-utils-1.1.1-11...  Done [174/288]
+Installing laus-0.1-76RHEL3...  Done [175/288]
+Installing libgcj-3.2.3-59...  Done [176/288]
+Installing logwatch-4.3.2-3.rhel3...  Done [177/288]
+Installing m4-1.4.1-13...  Done [178/288]
+Installing make-3.79.1-17.1...  Done [179/288]
+Installing mgetty-1.1.30-9.EL3...  Done [180/288]
+Installing irda-utils-0.9.15-1...  Done [181/288]
+Installing mtools-3.9.8-8...  Done [182/288]
+Installing aspell-0.33.7.1-25.3.rhel3...  Done [183/288]
+Installing man-1.5k-13.rhel3...  Done [184/288]
+Installing minicom-2.00.0-17.1...  Done [185/288]
+Installing mtr-0.52-2...  Done [186/288]
+Installing nano-1.2.1-4...  Done [187/288]
+Installing nscd-2.3.2-95.50...  Done [188/288]
+Installing nss_db-2.2-20.4...  Done [189/288]
+Installing nss_db-compat-2.2-20.4...  Done [190/288]
+Installing authd-1.4.1-2.RHEL3...  Done [191/288]
+Installing bind-libs-9.2.4-20.EL3...  Done [192/288]
+Installing bind-utils-9.2.4-20.EL3...  Done [193/288]
+Installing cups-libs-1.1.17-13.3.43...  Done [194/288]
+Installing libwvstreams-3.70-10...  Done [195/288]
+Installing net-snmp-libs-5.0.9-2.30E.22...  Done [196/288]
+Installing OpenIPMI-1.4.14-1.3E.11...  Done [197/288]
+Installing pam_krb5-1.79-1...  Done [198/288]
+Installing pdksh-5.2.14-21.9...  Done [199/288]
+Installing pinfo-0.6.6-4...  Done [200/288]
+Installing psacct-6.3.2-36.rhel3...  Done [201/288]
+Installing pyOpenSSL-0.5.1-8...  Done [202/288]
+Installing bc-1.06-15...  Done [203/288]
+Installing ftp-0.17-17.2...  Done [204/288]
+Installing lftp-2.6.3-6...  Done [205/288]
+Installing diskdumputils-1.3.3-1...  Done [206/288]
+Installing gettext-0.11.4-7...  Done [207/288]
+Installing libxml2-python-2.5.10-7...  Done [208/288]
+Installing python-optik-1.4.1-2...  Done [209/288]
+Installing rhnlib-2.1.1-7.el3...  Done [210/288]
+Installing jpackage-utils-1.5.38-1jpp_5rh...  Done [211/288]
+Installing pam_ccreds-3-3.rhel3.2...  Done [212/288]
+Installing ppp-2.4.1-14.1...  Done [213/288]
+Installing sharutils-4.2.1-16.2...  Done [214/288]
+Installing stunnel-4.04-4...  Done [215/288]
+Installing sudo-1.6.7p5-1.2...  Done [216/288]
+Installing syslinux-2.06-0.3E...  Done [217/288]
+Installing talk-0.17-20...  Done [218/288]
+Installing mkbootdisk-1.5.1-1...  Done [219/288]
+Installing sysreport-1.3.7.2-18...  Done [220/288]
+Installing tcsh-6.12-13.EL3...  Done [221/288]
+Installing telnet-0.17-26.EL3.3...  Done [222/288]
+Installing tftp-0.39-0.EL3.4...  Done [223/288]
+Installing time-1.7-23...  Done [224/288]
+Installing tmpwatch-2.8.4-5...  Done [225/288]
+Installing utempter-0.5.5-1.3EL.0...  Done [226/288]
+Installing vim-common-6.3.046-0.30E.4...  Done [227/288]
+Installing wget-1.10.2-0.30E...  Done [228/288]
+Installing apmd-3.0.2-18...  Done [229/288]
+Installing cyrus-sasl-gssapi-2.1.15-10...  Done [230/288]
+Installing cyrus-sasl-plain-2.1.15-10...  Done [231/288]
+Installing devlabel-0.48.03-10...  Done [232/288]
+Installing dhclient-3.0.1-10_EL3...  Done [233/288]
+Installing ipsec-tools-0.2.5-0.7.rhel3.4...  Done [234/288]
+Installing isdn4k-utils-3.1-76...  Done [235/288]
+Installing iptables-1.2.8-12.3...  Done [236/288]
+Installing iptables-ipv6-1.2.8-12.3...  Done [237/288]
+Installing iscsi-initiator-utils-3.6.3-4...  Done [238/288]
+Installing kernel-pcmcia-cs-3.1.31-19...  Done [239/288]
+Installing kernel-utils-2.4-8.37.15...  Done [240/288]
+Installing autofs-4.1.3-216...  Done [241/288]
+Installing gnupg-1.2.1-20...  Done [242/288]
+Installing nss_ldap-207-17...  Done [243/288]
+Installing openssh-3.6.1p2-33.30.14...  Done [244/288]
+Installing openssh-clients-3.6.1p2-33.30.14...  Done [245/288]
+Installing netdump-0.7.16-1.1...  Done [246/288]
+Installing openssh-server-3.6.1p2-33.30.14...  Done [247/288]
+Installing pciutils-2.1.10-7.EL3.1...  Done [248/288]
+Installing portmap-4.0-56...  Done [249/288]
+Installing nfs-utils-1.0.6-45EL...  Done [250/288]
+Installing prelink-0.3.2-2.EL...  Done [251/288]
+Installing quota-3.10-9...  Done [252/288]
+Installing redhat-config-securitylevel-tui-1.2.9.2-1...  Done [253/288]
+Installing rp-pppoe-3.5-4.2...  Done [254/288]
+Installing sendmail-8.12.11-4.RHEL3.6...  Done [255/288]
+Installing mdadm-1.5.0-9.1...  Done [256/288]
+Installing tcpdump-3.7.2-7.E3.5...  Done [257/288]
+Installing vconfig-1.6-2...  Done [258/288]
+Installing vixie-cron-4.1-19.EL3...  Done [259/288]
+Installing wvdial-1.53-11...  Done [260/288]
+Installing XFree86-libs-4.3.0-122.EL...  Done [261/288]
+Installing XFree86-Mesa-libGL-4.3.0-122.EL...  Done [262/288]
+Installing xinetd-2.3.12-6.3E.2...  Done [263/288]
+Installing cups-1.1.17-13.3.43...  Done [264/288]
+Installing redhat-lsb-1.3-3.1.EL3...  Done [265/288]
+Installing ypbind-1.12-5.21.10...  Done [266/288]
+Installing yp-tools-2.8-6...  Done [267/288]
+Installing rpm-python-4.2.3-32_nonptl...  Done [268/288]
+Installing redhat-config-network-tui-1.2.65-1...  Done [269/288]
+Installing up2date-4.5.5-7.el3...  Done [270/288]
+Installing httpd-2.0.46-63.ent...  Done [271/288]
+Installing cpp-3.2.3-59...  Done [272/288]
+Installing vim-enhanced-6.3.046-0.30E.4...  Done [273/288]
+Installing glibc-kernheaders-2.4-8.34.5...  Done [274/288]
+Installing glibc-headers-2.3.2-95.50...  Done [275/288]
+Installing glibc-devel-2.3.2-95.50...  Done [276/288]
+Installing ctags-5.4-2...  Done [277/288]
+Installing elfutils-libelf-devel-0.94.1-2...  Done [278/288]
+Installing elfutils-devel-0.94.1-2...  Done [279/288]
+Installing libstdc++-devel-3.2.3-59...  Done [280/288]
+Installing zlib-devel-1.1.4-10.EL3...  Done [281/288]
+Installing krb5-devel-1.2.7-64...  Done [282/288]
+Installing openssl-devel-0.9.7a-33.23...  Done [283/288]
+Installing pam-devel-0.75-72...  Done [284/288]
+Installing gcc-3.2.3-59...  Done [285/288]
+Installing gcc-c++-3.2.3-59...  Done [286/288]
+Installing screen-3.9.15-10...  Done [287/288]
+Installing redhat-release-3ES-13.9.5...  Done [288/288]
+Performing post install configuration...
+In progress...    Completed 
+Installing bootloader...
+sending termination signals...done
+sending kill signals...done
+disabling swap...
+        /tmp/hda3
+unmounting filesystems...
+        /mnt/runtime done
+        disabling /dev/loop0
+        /proc done
+        /dev/pts done
+        /tmp/ramfs done
+        /mnt/sysimage/boot done
+        /mnt/sysimage/dev/pts done
+        /mnt/sysimage/proc done
+        /mnt/sysimage done
+rebooting system
+Restarting system.
+[Restarting Linux and generating host key] kvm -hda .out/qemu/qemu.img -boot c -pidfile .out/qemu/pidfile -net tap,ifname=tap0 -no-reboot -m 512 -net nic,model=rtl8139,macaddr=00:02:04:06:08:0a -net nic,model=ne2k_pci,macaddr=00:03:05:07:09:0b -vnc :0 -monitor null -serial tcp:172.17.42.1:10023,server,nowait -daemonize
+Could not configure '/dev/rtc' to have a 1024 Hz timer. This is not a fatal
+error, but for better emulation accuracy either use a 2.6 host Linux kernel or
+type 'echo 1024 > /proc/sys/dev/rtc/max-user-freq' as root.
+SIOCSIFADDR: Permission denied
+SIOCSIFFLAGS: Permission denied
+SIOCSIFFLAGS: Permission denied
+can't add tap0 to bridge ath1: Operation not supported
+[Waiting for connection from VM, please be patient] ( echo -e "HTTP/1.1 200 Ok\r\n\r\n\c" && cat .out/ssh/host_rsa.pub ) | socat - tcp-listen:10080,bind=172.17.42.1
+GET /authorized_keys HTTP/1.0
+User-Agent: Wget/1.10.2 (Red Hat modified)
+Accept: */*
+Host: 172.17.42.1:10080
+Connection: Keep-Alive
+
+[Getting VM's host key] scripts/sshimage -n -oStrictHostKeyChecking=no 172.17.42.90 cat /root/postinstall.log
+debug1: Connecting to 172.17.42.90 [172.17.42.90] port 22.
+debug1: Connection established.
+debug1: identity file .out/ssh/host_rsa type 1
+debug1: Remote protocol version 1.99, remote software version OpenSSH_3.6.1p2
+debug1: match: OpenSSH_3.6.1p2 pat OpenSSH_3.*
+debug1: Enabling compatibility mode for protocol 2.0
+debug1: Local version string SSH-2.0-OpenSSH_4.6p1 Debian-4+b1
+debug1: SSH2_MSG_KEXINIT sent
+debug1: SSH2_MSG_KEXINIT received
+debug1: kex: server->client aes128-cbc hmac-md5 none
+debug1: kex: client->server aes128-cbc hmac-md5 none
+debug1: SSH2_MSG_KEX_DH_GEX_REQUEST(1024<1024<8192) sent
+debug1: expecting SSH2_MSG_KEX_DH_GEX_GROUP
+debug1: SSH2_MSG_KEX_DH_GEX_INIT sent
+debug1: expecting SSH2_MSG_KEX_DH_GEX_REPLY
+Warning: Permanently added '172.17.42.90' (RSA) to the list of known hosts.
+debug1: ssh_rsa_verify: signature correct
+debug1: SSH2_MSG_NEWKEYS sent
+debug1: expecting SSH2_MSG_NEWKEYS
+debug1: SSH2_MSG_NEWKEYS received
+debug1: SSH2_MSG_SERVICE_REQUEST sent
+debug1: SSH2_MSG_SERVICE_ACCEPT received
+debug1: Authentications that can continue: publickey,keyboard-interactive
+debug1: Next authentication method: publickey
+debug1: Offering public key: .out/ssh/host_rsa
+debug1: Server accepts key: pkalg ssh-rsa blen 277
+debug1: read PEM private key done: type RSA
+debug1: Authentication succeeded (publickey).
+debug1: channel 0: new [client-session]
+debug1: Entering interactive session.
+Warning: No xauth data; using fake authentication data for X11 forwarding.
+debug1: Requesting X11 forwarding with authentication spoofing.
+debug1: Requesting authentication agent forwarding.
+debug1: Sending environment.
+debug1: Sending env LC_CTYPE = en_US.UTF-8
+debug1: Sending command: cat /root/postinstall.log
+debug1: Remote: No xauth program; cannot forward with spoofing.
+debug1: client_input_channel_req: channel 0 rtype exit-status reply 0
+Completed successfully
+debug1: channel 0: free: client-session, nchannels 1
+debug1: Transferred: stdin 0, stdout 0, stderr 0 bytes in 0.3 seconds
+debug1: Bytes per second: stdin 0.0, stdout 0.0, stderr 0.0
+debug1: Exit status 0
+[Installing extra packages via rpm] scripts/scpimage upstream/rpm/subversion-1.4.3-1.i386.rpm upstream/rpm/neon-0.24.7-1.i386.rpm upstream/rpm/xmlstarlet-1.0.1-1.i586.rpm 172.17.42.90:
+debug1: Connecting to 172.17.42.90 [172.17.42.90] port 22.
+debug1: Connection established.
+debug1: identity file .out/ssh/host_rsa type 1
+debug1: Remote protocol version 1.99, remote software version OpenSSH_3.6.1p2
+debug1: match: OpenSSH_3.6.1p2 pat OpenSSH_3.*
+debug1: Enabling compatibility mode for protocol 2.0
+debug1: Local version string SSH-2.0-OpenSSH_4.6p1 Debian-4+b1
+debug1: SSH2_MSG_KEXINIT sent
+debug1: SSH2_MSG_KEXINIT received
+debug1: kex: server->client aes128-cbc hmac-md5 none
+debug1: kex: client->server aes128-cbc hmac-md5 none
+debug1: SSH2_MSG_KEX_DH_GEX_REQUEST(1024<1024<8192) sent
+debug1: expecting SSH2_MSG_KEX_DH_GEX_GROUP
+debug1: SSH2_MSG_KEX_DH_GEX_INIT sent
+debug1: expecting SSH2_MSG_KEX_DH_GEX_REPLY
+debug1: Host '172.17.42.90' is known and matches the RSA host key.
+debug1: Found key in .out/ssh/known_hosts:1
+debug1: ssh_rsa_verify: signature correct
+debug1: SSH2_MSG_NEWKEYS sent
+debug1: expecting SSH2_MSG_NEWKEYS
+debug1: SSH2_MSG_NEWKEYS received
+debug1: SSH2_MSG_SERVICE_REQUEST sent
+debug1: SSH2_MSG_SERVICE_ACCEPT received
+debug1: Authentications that can continue: publickey,keyboard-interactive
+debug1: Next authentication method: publickey
+debug1: Offering public key: .out/ssh/host_rsa
+debug1: Server accepts key: pkalg ssh-rsa blen 277
+debug1: read PEM private key done: type RSA
+debug1: Authentication succeeded (publickey).
+debug1: channel 0: new [client-session]
+debug1: Entering interactive session.
+debug1: Sending environment.
+debug1: Sending env LC_CTYPE = en_US.UTF-8
+debug1: Sending command: scp -d -t .
+subversion-1.4.3-1.i386.rpm                   100% 1427KB   1.4MB/s   00:00    
+neon-0.24.7-1.i386.rpm                        100%   53KB  52.8KB/s   00:00    
+xmlstarlet-1.0.1-1.i586.rpm                   100%  515KB 514.6KB/s   00:00    
+debug1: client_input_channel_req: channel 0 rtype exit-status reply 0
+debug1: channel 0: free: client-session, nchannels 1
+debug1: fd 0 clearing O_NONBLOCK
+debug1: fd 1 clearing O_NONBLOCK
+debug1: Transferred: stdin 0, stdout 0, stderr 0 bytes in 0.4 seconds
+debug1: Bytes per second: stdin 0.0, stdout 0.0, stderr 0.0
+debug1: Exit status 0
+scripts/sshimage -n 172.17.42.90 rpm -i subversion-1.4.3-1.i386.rpm neon-0.24.7-1.i386.rpm xmlstarlet-1.0.1-1.i586.rpm \&\& rm -f subversion-1.4.3-1.i386.rpm neon-0.24.7-1.i386.rpm xmlstarlet-1.0.1-1.i586.rpm
+debug1: Connecting to 172.17.42.90 [172.17.42.90] port 22.
+debug1: Connection established.
+debug1: identity file .out/ssh/host_rsa type 1
+debug1: Remote protocol version 1.99, remote software version OpenSSH_3.6.1p2
+debug1: match: OpenSSH_3.6.1p2 pat OpenSSH_3.*
+debug1: Enabling compatibility mode for protocol 2.0
+debug1: Local version string SSH-2.0-OpenSSH_4.6p1 Debian-4+b1
+debug1: SSH2_MSG_KEXINIT sent
+debug1: SSH2_MSG_KEXINIT received
+debug1: kex: server->client aes128-cbc hmac-md5 none
+debug1: kex: client->server aes128-cbc hmac-md5 none
+debug1: SSH2_MSG_KEX_DH_GEX_REQUEST(1024<1024<8192) sent
+debug1: expecting SSH2_MSG_KEX_DH_GEX_GROUP
+debug1: SSH2_MSG_KEX_DH_GEX_INIT sent
+debug1: expecting SSH2_MSG_KEX_DH_GEX_REPLY
+debug1: Host '172.17.42.90' is known and matches the RSA host key.
+debug1: Found key in .out/ssh/known_hosts:1
+debug1: ssh_rsa_verify: signature correct
+debug1: SSH2_MSG_NEWKEYS sent
+debug1: expecting SSH2_MSG_NEWKEYS
+debug1: SSH2_MSG_NEWKEYS received
+debug1: SSH2_MSG_SERVICE_REQUEST sent
+debug1: SSH2_MSG_SERVICE_ACCEPT received
+debug1: Authentications that can continue: publickey,keyboard-interactive
+debug1: Next authentication method: publickey
+debug1: Offering public key: .out/ssh/host_rsa
+debug1: Server accepts key: pkalg ssh-rsa blen 277
+debug1: read PEM private key done: type RSA
+debug1: Authentication succeeded (publickey).
+debug1: channel 0: new [client-session]
+debug1: Entering interactive session.
+Warning: No xauth data; using fake authentication data for X11 forwarding.
+debug1: Requesting X11 forwarding with authentication spoofing.
+debug1: Requesting authentication agent forwarding.
+debug1: Sending environment.
+debug1: Sending env LC_CTYPE = en_US.UTF-8
+debug1: Sending command: rpm -i subversion-1.4.3-1.i386.rpm neon-0.24.7-1.i386.rpm xmlstarlet-1.0.1-1.i586.rpm && rm -f subversion-1.4.3-1.i386.rpm neon-0.24.7-1.i386.rpm xmlstarlet-1.0.1-1.i586.rpm
+debug1: Remote: No xauth program; cannot forward with spoofing.
+debug1: client_input_channel_req: channel 0 rtype exit-status reply 0
+debug1: channel 0: free: client-session, nchannels 1
+debug1: Transferred: stdin 0, stdout 0, stderr 0 bytes in 4.7 seconds
+debug1: Bytes per second: stdin 0.0, stdout 0.0, stderr 0.0
+debug1: Exit status 0
+scripts/sshimage -n 172.17.42.90 shutdown -h now
+debug1: Connecting to 172.17.42.90 [172.17.42.90] port 22.
+debug1: Connection established.
+debug1: identity file .out/ssh/host_rsa type 1
+debug1: Remote protocol version 1.99, remote software version OpenSSH_3.6.1p2
+debug1: match: OpenSSH_3.6.1p2 pat OpenSSH_3.*
+debug1: Enabling compatibility mode for protocol 2.0
+debug1: Local version string SSH-2.0-OpenSSH_4.6p1 Debian-4+b1
+debug1: SSH2_MSG_KEXINIT sent
+debug1: SSH2_MSG_KEXINIT received
+debug1: kex: server->client aes128-cbc hmac-md5 none
+debug1: kex: client->server aes128-cbc hmac-md5 none
+debug1: SSH2_MSG_KEX_DH_GEX_REQUEST(1024<1024<8192) sent
+debug1: expecting SSH2_MSG_KEX_DH_GEX_GROUP
+debug1: SSH2_MSG_KEX_DH_GEX_INIT sent
+debug1: expecting SSH2_MSG_KEX_DH_GEX_REPLY
+debug1: Host '172.17.42.90' is known and matches the RSA host key.
+debug1: Found key in .out/ssh/known_hosts:1
+debug1: ssh_rsa_verify: signature correct
+debug1: SSH2_MSG_NEWKEYS sent
+debug1: expecting SSH2_MSG_NEWKEYS
+debug1: SSH2_MSG_NEWKEYS received
+debug1: SSH2_MSG_SERVICE_REQUEST sent
+debug1: SSH2_MSG_SERVICE_ACCEPT received
+debug1: Authentications that can continue: publickey,keyboard-interactive
+debug1: Next authentication method: publickey
+debug1: Offering public key: .out/ssh/host_rsa
+debug1: Server accepts key: pkalg ssh-rsa blen 277
+debug1: read PEM private key done: type RSA
+debug1: Authentication succeeded (publickey).
+debug1: channel 0: new [client-session]
+debug1: Entering interactive session.
+Warning: No xauth data; using fake authentication data for X11 forwarding.
+debug1: Requesting X11 forwarding with authentication spoofing.
+debug1: Requesting authentication agent forwarding.
+debug1: Sending environment.
+debug1: Sending env LC_CTYPE = en_US.UTF-8
+debug1: Sending command: shutdown -h now
+debug1: Remote: No xauth program; cannot forward with spoofing.
+debug1: client_input_channel_req: channel 0 rtype exit-status reply 0
+debug1: channel 0: free: client-session, nchannels 1
+debug1: Transferred: stdin 0, stdout 0, stderr 0 bytes in 0.8 seconds
+debug1: Bytes per second: stdin 0.0, stdout 0.0, stderr 0.0
+debug1: Exit status 0
+[Waiting for Linux 3-u9-i386-es shutdown] socat - tcp:172.17.42.1:10023 2> /dev/null || true
+Stopping atd: [  OK  ]
+Shutting down console mouse services: [  OK  ]
+Stopping sshd:[  OK  ]
+Stopping crond: [  OK  ]
+Saving random seed:  [  OK  ]
+Killing mdmonitor: [  OK  ]
+Shutting down kernel logger: [  OK  ]
+Shutting down system logger: [  OK  ]
+Shutting down interface eth0:  [  OK  ]
+Shutting down loopback interface:  [  OK  ]
+Starting killall:  [  OK  ]
+Sending all processes the TERM signal... 
+Sending all processes the KILL signal... 
+Syncing hardware clock to system time 
+Turning off swap:  
+Turning off quotas:  
+Unmounting file systems:  
+Halting system...
+md: stopping all md devices.
+flushing ide devices: hda hdc 
+Power down.
+[Compressing the installed Linux image] qemu-img convert -f qcow2 -c .out/qemu/qemu.img -O qcow2 .out/qemu/baseos.img
+[Removing the uncompressed Linux image] rm -f .out/qemu/qemu.img
+[Booting Linux 3-u9-i386-es] kvm -hda .out/qemu/baseos.img -cdrom upstream/iso/CheckPoint-InternetSecurityProductSuiteNGX-r65-d1.iso -pidfile .out/qemu/pidfile -net tap,ifname=tap0 -no-reboot -m 512 -net nic,model=rtl8139,macaddr=00:02:04:06:08:0a -net nic,model=ne2k_pci,macaddr=00:03:05:07:09:0b -vnc :0 -monitor null -serial tcp:172.17.42.1:10023,server,nowait -daemonize
+Could not configure '/dev/rtc' to have a 1024 Hz timer. This is not a fatal
+error, but for better emulation accuracy either use a 2.6 host Linux kernel or
+type 'echo 1024 > /proc/sys/dev/rtc/max-user-freq' as root.
+SIOCSIFADDR: Permission denied
+SIOCSIFFLAGS: Permission denied
+SIOCSIFFLAGS: Permission denied
+can't add tap0 to bridge ath1: Operation not supported
+[Waiting for connection from VM, please be patient] ( echo -e "HTTP/1.1 200 Ok\r\n\r\n\c" && cat .out/ssh/host_rsa.pub ) | socat - tcp-listen:10080,bind=172.17.42.1
+
+Sample of Post-Install Output|
+============================='
+debug1: client_input_channel_req: channel 0 rtype exit-status reply 0
+debug1: channel 0: free: client-session, nchannels 1
+Connection to 172.17.42.90 closed.
+debug1: Transferred: stdin 0, stdout 0, stderr 36 bytes in 524.5 seconds
+debug1: Bytes per second: stdin 0.0, stdout 0.0, stderr 0.1
+debug1: Exit status 0
+[Waiting for Linux 3-u9-i386-es shutdown] socat - tcp:172.17.42.1:10023 2> /dev/null || true
+[  OK  ]
+Stopping sshd:[  OK  ]
+Stopping crond: [  OK  ]
+Saving random seed:  [  OK  ]
+Killing mdmonitor: [  OK  ]
+Shutting down kernel logger: [  OK  ]
+Shutting down system logger: [  OK  ]
+Shutting down interface eth0:  [  OK  ]
+Shutting down loopback interface:  [  OK  ]
+Starting killall:  [  OK  ]
+Sending all processes the TERM signal... 
+Sending all processes the KILL signal... 
+Syncing hardware clock to system time 
+Turning off swap:  
+Turning off quotas:  
+Unmounting file systems:  
+Please stand by while rebooting the system...
+md: stopping all md devices.
+flushing ide devices: hda hdc 
+Restarting system.
+[Compressing the installed Linux image] qemu-img convert -f qcow2 -c .out/qemu/baseos.img -O qcow2 .out/qemu/checkpoint.img

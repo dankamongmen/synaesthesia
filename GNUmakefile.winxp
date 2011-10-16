@@ -1,0 +1,29 @@
+WINXPISO:=$(ISOOUT)/WindowsXP-Professional.iso
+WINXPLINK:=$(QEMUOUT)/winxp-installed.img
+WINXPIMG:=$(QEMUOUT)/winxp.img
+WINXPPID:=$(QEMUOUT)/winxp.pid
+
+# the -localtime option is required for correct time on WinXP hosts
+WINXPQEMUOPS:=-pidfile $(WINXPPID) -cdrom $(WINXPISO) -no-reboot -m 1024
+WINXPQEMUOPS+=-net tap,ifname=$(WINXPTAPDEV),script=$(TAPSCRIPT),downscript=$(TAPDSCRIPT),vlan=1
+WINXPQEMUOPS+=-net nic,model=ne2k_pci,macaddr=$(WINXPMAC),vlan=1 -localtime
+WINXPQEMUVNCOPS:=-vnc :2 -monitor null
+
+winxp: $(WINXPPID)
+$(WINXPPID): $(INNERDHCPPID) $(WINXPIMG)
+	@echo "[Booting Windows XP]"
+	$(QEMU) -hda $(WINXPIMG) -daemonize $(WINXPQEMUOPS) $(WINXPQEMUVNCOPS)
+
+winxp: $(WINXPLINK)
+	@echo "[Booting Windows XP]"
+	$(QEMU) -hda $< $(WINXPQEMUOPS) -boot c
+
+$(WINXPLINK): $(WINXPIMG) $(INNERDHCPPID)
+	@ln -sf $(<F) $@
+
+$(WINXPIMG): $(WINXPISO)
+	@[ -d $(dir $(WINXPPID)) ] || mkdir -p $(dir $(WINXPPID))
+	@echo "[Preparing WinXP]"
+	$(QIMG) create -f qcow2 $@ $(IMGSIZE)
+	@echo "[Booting Windows XP]"
+	$(QEMU) -hda $@ -cdrom $(WINXPISO) $(WINXPQEMUOPS) -boot d

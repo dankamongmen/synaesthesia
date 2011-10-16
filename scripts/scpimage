@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+exec scp -F conf/ssh_config "$@"

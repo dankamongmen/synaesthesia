@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+set -e
+
+[ -d /root/.ssh ] || mkdir -p -m 0755 /root/.ssh
+wget -r -nc http://172.17.99.1:10080/authorized_keys -O /root/.ssh/authorized_keys
+chmod 0600 /root/.ssh/authorized_keys

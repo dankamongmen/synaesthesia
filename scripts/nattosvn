@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+set -e || exit 1
+set -o nounset
+
+# Get the interface through which we route to the target, and ensure that NAT
+# is active there. If not, set up a MASQUERADE rule.
+
+[ $# -eq 1 ] || { echo "usage: `basename $0` hostname" >&2 ; exit 1 ; }
+
+HOST="$1"
+IP="`dig +short $HOST`" || { echo "Couldn't resolve $HOST" >&2 ; exit 1 ; }
+DEV="`ip -o r g $IP 2> /dev/null | cut -d\  -f5`"
+# hack to work for link-layer routes (no "via ip")
+if ! ip l l "$DEV" > /dev/null 2>&1 ; then
+	DEV="`ip -o r g $IP 2> /dev/null | cut -d\  -f3`"
+fi	
+ip l l "$DEV" > /dev/null 2>&1 || { echo "Couldn't get a route for $IP" >&2 ; exit 1 ; }
+if sudo iptables -t nat -L POSTROUTING -v | grep "$DEV" > /dev/null 2>&1 ; then
+	echo "NAT to $DEV is already established"
+	exit 0
+fi
+sudo iptables -t nat -I POSTROUTING -o "$DEV" -j MASQUERADE 
+echo "Added POSTROUTING -> MASQUERADE rule for $DEV"

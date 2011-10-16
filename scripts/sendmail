@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+set -e || exit 1
+
+which socat > /dev/null || { echo "Couldn't find socat executable, exiting" >&2 ; exit 1 ; }
+which pee > /dev/null || { echo "Couldn't find pee executable, exiting" >&2 ; exit 1 ; }
+
+function usage () { echo "usage: `basename $0` mail" ; }
+function usageerr () { usage >&2 ; exit 1 ; }
+
+[ $# -eq 1 ] || usageerr
+[ -r "$1" ] || { echo "couldn't read $1" >&2 ; usageerr ; }
+
+( echo -en "HELO `hostname -f`\r\nMAIL FROM: <$USER@`hostname -f`>\r\nRCPT TO: <$USER@smtp.innernet>\r\nRCPT TO: <root@smtp.innernet>\r\nDATA\r\n" ; sed -e '1d' < "$1" ; echo -en "\r\nThis is test $RANDOM.\r\n\r\n.\r\nQUIT\r\n" ) | pee "cat" "socat -t10 - tcp:172.17.99.90:25"

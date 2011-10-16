@@ -1,0 +1,163 @@
+### NOTA BENE: WHEN ASSIGNING ETHERNET ADDRESSES, UNICAST REQUIRES A 0 LSB ###
+# Allow interfaces to be set externally via ?=.
+
+# External network address
+TAPIP?=172.17.42.1
+
+# External domain name
+DOMAIN:=synaesthesia
+
+# Internal network address
+DMZIP?=172.17.99.1
+
+# Internal domain name
+INNERDOMAIN:=innernet
+
+# Internal bridge
+DMZ?=br0
+
+# The following addresses are all within innernet, and routed to through the
+# VPN-1. Innernet is simulated via a bridge device. For a new machine, select
+# values for its IP, corresponding master host's TAP device, MAC address, and
+# hostname. Define each, then update:
+#  a) the innernet dnsmasq options to include the mac and associate it with
+#      the IP and hostname (unless DHCP is unused by the host, in which case
+#      the hostname and IP should be added to $(INNERHOSTSFILE)),
+#  b) add the TAP device to the brctl add command which builds the bridge,
+#  c) add a NETDEVUP invocation for the TAP device in the innernet target,
+#  d) add a killfookvm PHONY target which hard-kills the machine and cleans up,
+#  e) add a NETDEVDOWN invocation for the TAP device in the killtap target
+
+# Sidewinder's external interface
+SIDEWINDERNAME:=sidewhinger
+SIDEWINDERIP:=172.17.42.90
+SIDEWINDERTAPDEV?=tap6
+SIDEWINDERMAC?=00:02:04:06:08:0a
+
+# Sidewinder's internal interface
+SIDEWINDERTAPDEVB?=tap7
+SIDEWINDERMACB?= 00:03:05:07:09:0b
+SIDEWINDERIPB:=172.17.99.91
+
+# SMTP server's single interface
+SMTPTAPDEV?=tap1
+SMTPHOSTNAME:=smtp
+SMTPIP:=172.17.99.90
+SMTPMAC?=00:12:14:16:18:1a
+
+# Windows XP workstation's single interface
+WINXPTAPDEV?=tap3
+WINXPHOSTNAME:=wretchxp
+WINXPIP:=172.17.99.141
+WINXPMAC?=00:01:01:02:03:05
+
+# IronNet's single interface
+FENETTAPDEV?=tap5
+FENETHOSTNAME:=fenet
+FENETIP:=172.17.99.111
+FENETMAC?=00:69:69:69:69:69
+
+# End innernet host definitions
+
+DHCPD:=dnsmasq
+DHCPCONF:=$(CONFDIR)/$(DHCPD).conf
+DHCPLEASE:=$(DHCPOUT)/$(TAPIP).leases
+INNERDHCPLEASE:=$(DHCPOUT)/$(SMTPTAPDEV).leases
+DHCPLEASETIME:=12h
+
+# dnsmasq requires an absolute path for the pidfile, or else silently refuses
+# to create it. don't remove the $(shell pwd), please.
+DHCPPID:=$(shell pwd)/$(DHCPOUT)/$(DHCPD).pid
+INNERDHCPPID:=$(shell pwd)/$(DHCPOUT)/inner$(DHCPD).pid
+
+HOSTSFILE:=$(shell pwd)/$(CONFDIR)/hosts
+INNERHOSTSFILE:=$(shell pwd)/$(CONFDIR)/innerhosts
+
+# DHCP options 3 and 6 are route and DNS, respectively. We want route disabled
+# for the internal VPN-1 interface and enabled elsewhere on the DMZ, and all
+# DNS queries to be directed to the DMZ DNS server (which will query the
+# outer server for $(DOMAIN)).
+DHCPOPS:=--dhcp-leasefile=$(DHCPLEASE) --no-hosts --addn-hosts=$(HOSTSFILE)
+DHCPOPS+=--bind-interfaces --dhcp-authoritative --user=$(USER) --group=$(USER)
+DHCPOPS+=--dhcp-range=172.17.42.50,172.17.42.150 --domain=$(DOMAIN)
+DHCPOPS+=--mx-target=$(SMTPHOSTNAME).$(INNERDOMAIN)
+DHCPOPS+=--listen-address=$(TAPIP) --domain-needed
+DHCPOPS+=--dhcp-host=$(SIDEWINDERMAC),$(SIDEWINDERIP),$(SIDEWINDERNAME),$(DHCPLEASETIME)
+DHCPOPS+=--dhcp-option=6,$(DMZIP)
+
+INNERDHCPOPS:=--no-hosts --addn-hosts=$(INNERHOSTSFILE)
+INNERDHCPOPS+=--dhcp-leasefile=$(INNERDHCPLEASE) --domain=$(INNERDOMAIN)
+INNERDHCPOPS+=--bind-interfaces --dhcp-authoritative --user=$(USER) --group=$(USER)
+INNERDHCPOPS+=--server=/$(DOMAIN)/$(TAPIP)
+INNERDHCPOPS+=--server=/42.17.172.in-addr.arpa/$(TAPIP)
+INNERDHCPOPS+=--dhcp-range=172.17.99.50,172.17.99.150
+INNERDHCPOPS+=--dhcp-mac=vpnhosts,$(SIDEWINDERMACB)
+INNERDHCPOPS+=--dhcp-mac=dmzhosts,$(SMTPMAC)
+INNERDHCPOPS+=--dhcp-mac=dmzhosts,$(WINXPMAC)
+INNERDHCPOPS+=--mx-target=$(SMTPHOSTNAME).$(INNERDOMAIN)
+INNERDHCPOPS+=--listen-address=$(DMZIP) --domain-needed
+INNERDHCPOPS+=--dhcp-host=$(SMTPMAC),$(SMTPIP),$(SMTPHOSTNAME),$(DHCPLEASETIME)
+INNERDHCPOPS+=--dhcp-host=$(WINXPMAC),$(WINXPIP),$(WINXPHOSTNAME),$(DHCPLEASETIME)
+INNERDHCPOPS+=--dhcp-host=$(SIDEWINDERMACB),$(SIDEWINDERIPB),$(SIDEWINDERNAME),$(DHCPLEASETIME)
+INNERDHCPOPS+=--dhcp-option=dmzhosts,3,$(SIDEWINDERIPB) --dhcp-option=vpnhosts,3
+
+MASQROUTE:=scripts/nattosvn
+NETDEVUP:=scripts/tapdevup
+NETDEVDOWN:=scripts/tapdevdown
+$(INNERDHCPPID): $(DHCPCONF) $(INNERHOSTSFILE)
+	@[ -d $(@D) ] || mkdir -p $(@D)
+	ip -o l | grep $(DMZ) > /dev/null || sudo brctl addbr $(DMZ)
+	ip -o a l dev $(DMZ) | grep $(DMZIP) > /dev/null || sudo ip a a $(DMZIP)/24 dev $(DMZ)
+	@$(NETDEVUP) $(SMTPTAPDEV)
+	@$(NETDEVUP) $(WINXPTAPDEV)
+	@$(NETDEVUP) $(FENETTAPDEV)
+	@$(NETDEVUP) $(SIDEWINDERTAPDEV)
+	@$(NETDEVUP) $(SIDEWINDERTAPDEVB)
+	sudo brctl addif $(DMZ) $(SMTPTAPDEV) $(WINXPTAPDEV) $(FENETTAPDEV) $(SIDEWINDERTAPDEV) $(SIDEWINDERTAPDEVB)
+	sudo ip l s $(DMZ) up
+	sudo $(DHCPD) -C $(DHCPCONF) $(INNERDHCPOPS) --pid-file=$@
+
+SNMPD:=snmpd
+SNMPDOUT:=$(OUT)/$(SNMPD)
+SNMPDCONF:=$(CONFDIR)/$(SNMPD)/$(SNMPD).conf
+SNMPDPID:=$(SNMPDOUT)/snmpd.pid
+
+$(DHCPPID): $(DHCPCONF) $(SNMPDCONF) $(MASQROUTE) $(HOSTSFILE)
+	@[ -d $(@D) ] || mkdir -p $(@D)
+	@[ -d $(dir $(SNMPDPID)) ] || mkdir -p $(dir $(SNMPDPID))
+	@$(MASQROUTE) svn.research.sys
+	sudo $(SNMPD) -c $(shell pwd)/$(SNMPDCONF) -C -p $(shell pwd)/$(SNMPDPID) -u $(USER) $(TAPIP)
+	sudo $(DHCPD) -C $(DHCPCONF) $(DHCPOPS) --pid-file=$@
+
+killdhcp:
+	@echo "Terminating snmpd"
+	@[ ! -e $(SNMPDPID) ] || { sudo cat $(SNMPDPID) | xargs -t kill ; sudo rm -f $(SNMPDPID) ; }
+	@echo "Terminating external DNS/DHCP server"
+	@[ ! -r $(DHCPPID) ] || { xargs -t < $(DHCPPID) kill ; rm -f $(DHCPPID) ; }
+	@echo "Terminating internal DNS/DHCP server"
+	@[ ! -r $(INNERDHCPPID) ] || { xargs -t < $(INNERDHCPPID) kill ; rm -f $(INNERDHCPPID) ; }
+
+killsmtpkvm:
+	@echo "Terminating Debian VM"
+	@[ ! -r $(SMTPQEMUPID) ] || { xargs -t < $(SMTPQEMUPID) kill ; rm -f $(SMTPQEMUPID) ; }
+
+killwinxpkvm:
+	@echo "Terminating WinXP VM"
+	@[ ! -r $(WINXPPID) ] || { xargs -t < $(WINXPPID) kill ; rm -f $(WINXPPID) ; }
+
+killfenetkvm:
+	@echo "Terminating IronNet VM"
+	@[ ! -r $(FENETPID) ] || { xargs -t < $(FENETPID) kill ; rm -f $(FENETPID) ; }
+
+killswinderkvm:
+	@echo "Terminating Sidewinder"
+	@[ ! -r $(SIDEWINDERPID) ] || { xargs -t < $(SIDEWINDERPID) kill ; rm -f $(SIDEWINDERPID) ; }
+
+BRDEVDOWN:=scripts/brdevdown
+killtap: killsmtpkvm killwinxpkvm killdhcp killfenetkvm killswinderkvm
+	@$(BRDEVDOWN) $(DMZ) $(DMZIP)/24
+	@$(NETDEVDOWN) $(SMTPTAPDEV)
+	@$(NETDEVDOWN) $(WINXPTAPDEV)
+	@$(NETDEVDOWN) $(FENETTAPDEV)
+	@$(NETDEVDOWN) $(SIDEWINDERTAPDEV)
+	@$(NETDEVDOWN) $(SIDEWINDERTAPDEVB)

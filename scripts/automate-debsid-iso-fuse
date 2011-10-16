@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+
+set -e || { echo "Couldn't set -e, exiting" >&2 ; exit 1 ; }
+set -o nounset || { echo "Couldn't set -o nounset, exiting" >&2 ; exit 1 ; }
+set -o pipefail || { echo "Couldn't set -o pipefail, exiting" >&2 ; exit 1 ; }
+
+which realpath > /dev/null || { echo "Couldn't find realpath, exiting" >&2 ; exit 1 ; }
+which fuseiso > /dev/null || { echo "Need the FUSE ISO9660 module, exiting" >&2 ; exit 1 ; }
+FUNIONFS=`which unionfs-fuse` || { echo "Need the FUSE unionfs module, exiting" >&2 ; exit 1 ; }
+MKISO=`which mkisofs || which genisoimage` || { echo "Couldn't find mkisofs or genisoimage, exiting" >&2 ; exit 1 ; }
+
+function usage () { echo "usage: `basename $0` input-isos output-iso debmoddir" ; }
+function usageerr () { usage >&2 ; exit 1 ; }
+
+[ $# -eq 3 ] || usageerr
+for infile in "$1" "$3" ; do
+	[ -r "$infile" ] || { echo "Couldn't read $infile, exiting" >&2 ; usageerr ; }
+done
+[ -d "$3" ] || usageerr
+
+function umount_try () {
+	for i in 1 2 3 ; do
+		if fusermount -u "$1" ; then
+			return 0
+		fi
+		sleep 1
+	done
+	return 1
+}
+
+function umount_debian () {
+	[ $# -eq 1 ] || { echo "Parameter error: $@" >&2 ; return 1 ; }
+	for mountpnt in "$@" ; do
+		umount_try "$mountpnt" || return 1
+		rm -rf "$mountpnt" || return 1
+	done
+}
+
+function umount_funion () {
+	[ $# -eq 1 ] || { echo "Parameter error: $@" >&2 ; return 1 ; }
+	fusermount -u "$1" || return 1
+	rm -rf "$1" || return 1
+}
+
+function exithandle () {
+	umount_funion "$FUNIONMNT" || \
+		{ echo "Error unmounting $FUNIONMNT, exiting" >&2 ; umount_debian "$ISOMNT" ; exit 1 ; }
+	umount_debian "${ISOMNT[@]}" || \
+		{ echo "Error unmounting ${ISOMNT[@]}, exiting" >&2 ; exit 1 ; }
+}
+
+trap exithandle EXIT
+
+ISOMNT=()
+for i in "$1" ; do
+	isomnt=`mktemp -d -t \`basename $0\`.XXXXXX`
+	fuseiso -n "$i" "$isomnt" || \
+	{ echo "Couldn't loop-mount $i onto $isomnt, exiting" >&2 ; rmdir "$isomnt" ; exit 1 ; }
+	ISOMNT+=($isomnt)
+done
+
+cp "${ISOMNT[@]}/isolinux/isolinux.bin" "$3/isolinux/"
+cp "${ISOMNT[@]}/install.amd/initrd.gz" "$3/install.amd/"
+FUNIONMNT=`mktemp -d -t \`basename $0\`.XXXXXX` || { umount_debian "$ISOMNT" ; exit 1 ; }
+"$FUNIONFS" -o cow "`realpath $3`=RW:${ISOMNT[@]}=RO" "$FUNIONMNT" || \
+ { echo "Couldn't create FUSE unionfs at $FUNIONMNT from $3 (rw) and $ISOMNT (ro), exiting" >&2 ; umount_debian "$ISOMNT" ; rmdir "$FUNIONMNT" ; exit 1 ; }
+chmod 644 "$FUNIONMNT/isolinux/isolinux.bin" "$FUNIONMNT/install.amd/initrd.gz"
+
+# this is one vile hack right here
+function addfirmware () {
+	RDTMP=`mktemp -d -t \`basename $0\`.XXXXXX` || return 1
+	echo "Unpacking `basename $1` into $RDTMP..."
+	# FIXME cleanup RDTMP on error
+	cd "$RDTMP" || return 1
+	# mknod failures in /dev FIXME
+	zcat "$1" | cpio -iV || echo "Ignoring cpio error!" >&2
+	cp --force -vr "$FUNIONMNT/lib/firmware" lib/ #FIXME just terrible
+	echo "Repacking cwd into $1..."
+	find . -print0 | cpio -0 -H newc -oV | gzip -c > "$1" || return 1
+	cd - || return 1
+	rm -rf "$RDTMP" || return 1
+}
+
+function makecd () {
+	$MKISO -boot-load-size 4 -boot-info-table -R -J -T -input-charset utf8 -no-emul-boot -b isolinux/isolinux.bin -c isolinux/boot.cat -o $2 $1
+}
+ 
+addfirmware "`realpath $3/install.amd/initrd.gz`"
+
+makecd "$FUNIONMNT" "$2" || \
+ { echo "Error ISO9660-izing $FUNIONMNT to $2, exiting" >&2 ; umount_funion "$FUNIONMNT" ; umount_debian "${ISOMNT[@]}" ; exit 1 ; }
+
+# everything will be unmounted by the exit handler...

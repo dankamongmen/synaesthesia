@@ -1,0 +1,2 @@
+debnetboot:
+	@wget -r -np http://d-i.debian.org/daily-images/amd64/daily/netboot/

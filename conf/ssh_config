@@ -1,0 +1,39 @@
+# BatchMode implies "SetupTimeOut 300" on Debian setups.
+
+# FIXME Inherit these IPs somehow, or abstract them using DNS...
+Host 172.17.42.90
+	IdentityFile .out/ssh/host_rsa
+
+Host 172.17.99.91
+	IdentityFile .out/ssh/host_rsa
+	HostKeyAlias 172.17.42.90
+
+Host 172.17.99.142
+	IdentityFile .out/ssh/smartcenter_rsa
+
+Host 172.17.99.90
+	IdentityFile .out/ssh/smtp_host_rsa
+
+Host 172.17.99.111
+	StrictHostKeyChecking no
+
+Host *
+	BatchMode yes
+	ChallengeResponseAuthentication no
+	ConnectTimeout 3
+	ExitOnForwardFailure yes
+	ForwardAgent yes
+	ForwardX11 yes
+	GlobalKnownHostsFile .out/ssh/global_known_hosts
+	HashKnownHosts yes
+	IdentitiesOnly yes
+	#LogLevel DEBUG
+	PasswordAuthentication no
+	Protocol 2
+	SendEnv LANG
+	ServerAliveCountMax 2
+	ServerAliveInterval 5
+	StrictHostKeyChecking yes
+	TCPKeepAlive no
+	User root
+	UserKnownHostsFile .out/ssh/known_hosts

@@ -1,0 +1,21 @@
+omnithesiaconfig :- networks vms
+networks :- network networks | ε
+network :- domains netaddress netmaskbits hosts dhcppidfile
+netaddress :- [ipv4address]
+netmaskbits :- [0..32]
+hosts :- host hosts | ε
+domains :- domain opt-domains
+opt-domains :- domain opt-domains | ε
+host :- hostname hostaddress
+hostaddress :- [ipv4address]
+hwaddress :- [macaddress]
+vms :- vm vms | ε
+vm :- nics image vmpidfile
+image :- imagefile imagesize
+nics :- nic nics | ε
+nic :- nichw hwaddress REFERENCETO(host)
+nichw :- rtl8139 | ne2kpci | lance
+dhcppidfile :- [file:///]
+vmpidfile :- [file:///]
+imagefile :- [file:///]
+imagesize :- [2..128]

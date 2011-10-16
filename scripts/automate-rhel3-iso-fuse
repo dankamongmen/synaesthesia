@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+
+set -e || { echo "Couldn't set -e, exiting" >&2 ; exit 1 ; }
+set -o pipefail || { echo "Couldn't set -o pipefail, exiting" >&2 ; exit 1 ; }
+
+which fuseiso > /dev/null || { echo "Need the FUSE ISO9660 module, exiting" >&2 ; exit 1 ; }
+FUNIONFS=`which funionfs || which unionfs-fuse` || { echo "Need the FUSE unionfs module, exiting" >&2 ; exit 1 ; }
+MKISO=`which mkisofs || which genisoimage` || { echo "Couldn't find mkisofs or genisoimage, exiting" >&2 ; exit 1 ; }
+
+function usage () { echo "usage: `basename $0` input-isos output-iso kickstartconf isolinuxconf discinfo" ; }
+function usageerr () { usage >&2 ; exit 1 ; }
+
+# There's four ISO's for RHEL3S
+[ $# -eq 8 ] || usageerr
+for infile in "$1" "$2" "$3" "$4" "$6" "$7" "$8" ; do
+	[ -r "$infile" ] || { echo "Couldn't read $infile, exiting" >&2 ; usageerr ; }
+done
+
+function exithandle () {
+	umount_funion "$FUNIONMNT" "$FUNIONTMP" || \
+		{ echo "Error unmounting $FUNIONMNT, exiting" >&2 ; umount_centos "$ISOMNT" ; exit 1 ; }
+	umount_centos "${ISOMNT[@]}" || \
+		{ echo "Error unmounting ${ISOMNT[@]}, exiting" >&2 ; exit 1 ; }
+}
+
+trap exithandle EXIT
+
+function umount_centos () {
+	[ $# -eq 4 ] || { echo "Parameter error: $@" >&2 ; return 1 ; }
+	for mountpnt in "$@" ; do
+		fusermount -u "$mountpnt" || return 1
+		rm -rf "$mountpnt" || return 1
+	done
+}
+
+function umount_funion () {
+	[ $# -eq 2 ] || { echo "Parameter error: $@" >&2 ; return 1 ; }
+	fusermount -u "$1" || return 1
+	rm -rf "$1" "$2" || return 1
+}
+
+ISOMNT=()
+for i in "$1" "$2" "$3" "$4" ; do
+	isomnt=`mktemp -d -t \`basename $0\`.XXXXXX`
+	fuseiso -n "$i" "$isomnt" || \
+	{ echo "Couldn't loop-mount $i onto $isomnt, exiting" >&2 ; rmdir "$isomnt" ; exit 1 ; }
+	ISOMNT+=($isomnt)
+done
+
+FUNIONMNT=`mktemp -d -t \`basename $0\`.XXXXXX` || { umount_centos "$ISOMNT" ; exit 1 ; }
+FUNIONTMP=`mktemp -d -t \`basename $0\`.XXXXXX` || { umount_centos "$ISOMNT" ; rmdir "$FUNIONMNT" ; exit 1; }
+"$FUNIONFS" "$FUNIONTMP" "$FUNIONMNT" -o "dirs=`echo ${ISOMNT[@]} | tr \  :`" || \
+ { echo "Couldn't create FUSE unionfs at $FUNIONMNT from $FUNIONTMP (rw) and $ISOMNT (ro), exiting" >&2 ; umount_centos "$ISOMNT" ; rmdir "$FUNIONMNT" "$FUNIONTMP" ; exit 1 ; }
+
+# FIXME use fatfuse once it's more widely available
+function automate_288_disk () {
+	[ $# -eq 2 ] || { echo "Parameter error: $@" >&2 ; return 1 ; }
+	sudo cp -fv "$2" "$1/syslinux.cfg"
+}
+
+function umount_288_disk () {
+	[ $# -eq 1 ] || { echo "Parameter error: $@" >&2 ; return 1 ; }
+	sudo umount "$1" && rmdir "$1"
+}
+
+function automate () {
+	[ $# -eq 5 ] || { echo "Parameter error: $@" >&2 ; return 1 ; }
+	mkdir -p "$1/images" && cp -fv "$5" "$1/images" || return 1
+	TMPDISK=`mktemp -d -t \`basename $0\`.XXXXXX` || return 1
+	sudo mount -t vfat -o loop "$1/images/bootdisk.img" "$TMPDISK" || { rm -rf "$TMPDISK" "$TMPIMG" ; return 1 ; }
+	automate_288_disk "$TMPDISK" "$3" || { umount_288_disk "$TMPDISK" ; return 1 ; }
+	umount_288_disk "$TMPDISK" || return 1
+	cp -fv "$2" "$4" "$1" || return 1
+}
+
+function makecd () {
+	$MKISO -R -J -T -input-charset utf8 -b images/bootdisk.img -c isolinux/boot.cat -o $2 $1
+}
+ 
+automate "$FUNIONTMP" "$6" "$7" "$8" "${ISOMNT[0]}/images/bootdisk.img" || \
+ { echo "Error copying files to $FUNIONTMP, exiting" >&2 ; umount_funion "$FUNIONMNT" "$FUNIONTMP" ; umount_centos "${ISOMNT[@]}" ; exit 1 ; }
+
+makecd "$FUNIONMNT" "$5" || \
+ { echo "Error ISO9660-izing $FUNIONMNT to $5, exiting" >&2 ; umount_funion "$FUNIONMNT" "$FUNIONTMP" ; umount_centos "${ISOMNT[@]}" ; exit 1 ; }
+
+# everything will be unmounted by the exit handler...

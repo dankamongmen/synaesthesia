@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+set -e || { echo "Couldn't set -e, exiting" >&2 ; exit 1 ; }
+set -o nounset
+
+function usage () { echo "Usage: `basename $0` tapdev [ tapaddr ]" ; }
+function usageerr () { usage >&2 ; return 1 ; }
+
+[ $# -gt 0 ] || usageerr
+TAPDEV="$1"
+TAPIP=""
+[ $# -lt 3 ] || usageerr
+[ $# -eq 1 ] || TAPIP="$2"
+
+if ip l l dev $TAPDEV > /dev/null 2>&1 ; then
+	[ -z "$TAPIP" ] ! ip -o a l dev $TAPDEV 2>&1 | grep "$TAPIP" > /dev/null || sudo ip a d $TAPIP dev $TAPDEV
+	sudo ip l s dev $TAPDEV down
+	tunctl -d $TAPDEV
+fi

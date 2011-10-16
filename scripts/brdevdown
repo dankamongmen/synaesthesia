@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+set -e || { echo "Couldn't set -e, exiting" >&2 ; exit 1 ; }
+set -o nounset
+
+function usage () { echo "Usage: `basename $0` bridge bridgeip" ; }
+function usageerr () { usage >&2 ; return 1 ; }
+
+[ $# -eq 2 ] || usageerr
+
+BRDEV="$1"
+IP="$2"
+
+echo "Destroying bridge $BRDEV"
+! ip -o a l dev $BRDEV 2>&1 | grep $IP > /dev/null || sudo ip a d $IP dev $BRDEV
+! ip l l dev $BRDEV > /dev/null 2>&1 || sudo ip l s dev $BRDEV down
+! ip l l dev $BRDEV > /dev/null 2>&1 || sudo brctl delbr $BRDEV

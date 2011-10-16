@@ -1,0 +1,8 @@
+# This file describes the network interfaces available on your system
+# and how to activate them. For more information, see interfaces(5).
+
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
